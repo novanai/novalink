@@ -1,0 +1,8 @@
+.venv/
+.vscode/
+__pycache__/
+Lavalink.jar
+logs/
+application.yml
+.env
+test_bot.py
