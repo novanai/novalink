@@ -6,8 +6,9 @@ import logging
 import typing
 
 import aiohttp
+import attr
 
-from lava import errors, events, models
+from lava import errors, events, models, utils
 
 log = logging.getLogger(__name__)
 
@@ -17,6 +18,11 @@ class Lavalink:
         self._is_ssl: bool | None = None
         self._host: str | None = None
         self._port: int | str | None = None
+        self._bot_id: int | None = None
+
+        self._session_id: str | None = None
+
+        self.voice_states: dict[int, models.VoiceState] = {}
 
         self._session: aiohttp.ClientSession | None = None
         self._websocket: aiohttp.client._WSRequestContextManager | None = None
@@ -35,28 +41,42 @@ class Lavalink:
     @property
     def host(self) -> str:
         if self._host is None:
-            raise RuntimeError("Lavalink.connect() was not called.")
+            raise RuntimeError("host Lavalink.connect() was not called.")
 
         return self._host
 
     @property
     def port(self) -> int | str:
         if self._port is None:
-            raise RuntimeError("Lavalink.connect() was not called.")
+            raise RuntimeError("port Lavalink.connect() was not called.")
 
         return self._port
 
     @property
+    def bot_id(self) -> int | str:
+        if self._bot_id is None:
+            raise RuntimeError("bot_id Lavalink.connect() was not called.")
+
+        return self._bot_id
+
+    @property
+    def session_id(self) -> str:
+        if self._session_id is None:
+            raise RuntimeError("session_id Lavalink.connect() was not called.")
+
+        return self._session_id
+
+    @property
     def session(self) -> aiohttp.ClientSession:
         if not self._session:
-            raise RuntimeError("Lavalink.connect() was not called.")
+            raise RuntimeError("session Lavalink.connect() was not called.")
 
         return self._session
 
     @property
     def websocket(self) -> aiohttp.client._WSRequestContextManager:
         if not self._websocket:
-            raise RuntimeError("Lavalink.connect() was not called.")
+            raise RuntimeError("websocket Lavalink.connect() was not called.")
 
         return self._websocket
 
@@ -76,6 +96,7 @@ class Lavalink:
         self._is_ssl = is_ssl
         self._host = host
         self._port = port
+        self._bot_id = bot_id
 
         headers = {
             "Authorization": password,
@@ -98,6 +119,7 @@ class Lavalink:
                 data: dict = json.loads(msg.data)
 
                 if data["op"] == "ready":
+                    self._session_id = data["sessionId"]
                     self.dispatch(events.ReadyEvent.from_payload(data))
 
                 elif data["op"] == "playerUpdate":
@@ -136,23 +158,102 @@ class Lavalink:
 
         return decorator
 
+    def handle_voice_server_update(
+        self, guild_id: int, endpoint: str, token: str
+    ) -> None:
+        # Handle endpoint = None disconnect
+        if self.voice_states.get(guild_id):
+            self.voice_states[guild_id].endpoint = endpoint.replace("wss://", "")
+            self.voice_states[guild_id].token = token
+
+    def handle_voice_state_update(
+        self, guild_id: int, user_id: int, session_id: str
+    ) -> None:
+        if user_id != self.bot_id:
+            return
+
+        if self.voice_states.get(guild_id):
+            self.voice_states[guild_id].session_id = session_id
+
+        else:
+            self.voice_states[guild_id] = models.VoiceState(
+                "", "", session_id, None, None
+            )
+
     ## REST API METHODS
 
-    async def get(self, path: str) -> typing.Any:
-        async with self.session.get(
-            f"{'http' if self.is_ssl else 'https'}://{self.host}:{self.port}/v3/{path}&trace=true"
+    async def request(
+        self, method: str, path: str, data: dict | None = None
+    ) -> typing.Any:
+        async with self.session.request(
+            method,
+            f"{'https' if self.is_ssl else 'http'}://{self.host}:{self.port}/v3/{path}",
+            json=data,
+            raise_for_status=True,
         ) as res:
-            data = await res.json()
+            rdata = await res.json()
 
             if not res.ok:
-                raise errors.LavalinkError.from_payload(
-                    data
-                ) from res.raise_for_status()
+                raise errors.LavalinkError.from_payload(rdata)
 
-            return data
+            return rdata
 
-    async def get_players(self, session_id: str) -> list[models.Player]:
+    async def get_players(self) -> list[models.Player]:
         return [
-            models.Player.from_payload(p) for p in
-            await self.get(f"sessions/{session_id}/players")
+            models.Player.from_payload(p)
+            for p in await self.request("GET", f"sessions/{self.session_id}/players")
         ]
+
+    async def get_player(self, guild_id: int) -> models.Player:
+        return models.Player.from_payload(
+            await self.request("GET", f"sessions/{self.session_id}/players/{guild_id}")
+        )
+
+    async def update_player(
+        self,
+        guild_id: int,
+        no_replace: bool = False,
+        encoded_track: str | None = None,
+        identifier: str | None = None,
+        position: int | None = None,
+        end_time: int | None = None,
+        volume: int | None = None,
+        paused: int | None = None,
+        filters: models.Filters | None = None,
+        voice: models.VoiceState | None = None,
+    ) -> models.Player:
+        query = f"sessions/{self.session_id}/players/{guild_id}" + (
+            "?noReplace=true" if no_replace else ""
+        )
+        voice_dict = attr.asdict(voice)
+        # TODO: build dict generation methods
+        voice_dict["sessionId"] = voice_dict["session_id"]
+        voice_dict.pop("connected")
+        voice_dict.pop("ping")
+        data = {
+            "encodedTrack": encoded_track,
+            "identifier": identifier,
+            "position": position,
+            "endTime": end_time,
+            "volume": volume,
+            "paused": paused,
+            "filters": attr.asdict(filters) if filters else None,
+            "voice": voice_dict,
+        }
+        data = utils.remove_null_values(**data)
+        r = await self.request("PATCH", query, data)
+        return models.Player.from_payload(r)
+
+    # Get player
+    # Update Player
+    # Destroy Player
+    # Update session
+    # Track loading
+    # Track Searching
+    # Track Decoding
+    # Get lavalink info
+    # get lavalink stats
+    # get lavalink version
+    # get routeplanner status
+    # unmark a failed address
+    # unmark all failed address

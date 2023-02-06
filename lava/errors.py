@@ -10,7 +10,7 @@ class LavalinkError(Exception):
     timestamp: datetime.datetime
     status: int
     error: str
-    trace: str
+    trace: str | None
     message: str
     path: str
 
@@ -20,10 +20,10 @@ class LavalinkError(Exception):
     @classmethod
     def from_payload(cls, data: dict) -> LavalinkError:
         return cls(
-            datetime.datetime.fromtimestamp(data["timestamp"]),
+            datetime.datetime.fromtimestamp(data["timestamp"] / 1000),
             data["status"],
             data["error"],
-            data["trace"],
+            data.get("trace"),
             data["message"],
             data["path"],
         )

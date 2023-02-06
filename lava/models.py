@@ -16,7 +16,7 @@ class PlayerState:
     @classmethod
     def from_payload(cls, data: dict) -> PlayerState:
         return cls(
-            datetime.datetime.fromtimestamp(data["time"]),
+            datetime.datetime.fromtimestamp(data["time"] / 1000),
             datetime.timedelta(milliseconds=data["position"]),
             data["connected"],
             datetime.timedelta(milliseconds=data["ping"]),
