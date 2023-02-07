@@ -20,6 +20,9 @@ EventT = typing.TypeVar("EventT", bound=Event)
 EventsCallbackT = typing.Callable[[EventT], typing.Awaitable[typing.Any]]
 
 
+# TODO: add .lavalink -> Lavalink property to each Event
+
+
 @attr.define()
 class ReadyEvent(Event):
     resumed: bool
@@ -41,36 +44,14 @@ class PlayerUpdateEvent(Event):
 
 
 @attr.define()
-class StatsEvent(Event):
-    players: int
-    playing_players: int
-    uptime: datetime.timedelta
-    memory: models.Memory
-    cpu: models.CPU
-    frame_stats: models.FrameStats | None
-
-    @classmethod
-    def from_payload(cls, data: dict) -> StatsEvent:
-        return cls(
-            data["players"],
-            data["playingPlayers"],
-            datetime.timedelta(milliseconds=data["uptime"]),
-            models.Memory.from_payload(data["memory"]),
-            models.CPU.from_payload(data["cpu"]),
-            models.FrameStats.from_payload(f)
-            if (f := data.get("frameStats"))
-            else None,
-        )
+class StatsEvent(models.Stats, Event):
+    ...
 
 
 @attr.define()
 class TrackStartEvent(Event):
     guild_id: int
     encoded_track: str
-
-    @property
-    def track(self) -> ...:
-        ...
 
     @classmethod
     def from_payload(cls, data: dict) -> TrackStartEvent:
@@ -86,10 +67,6 @@ class TrackEndEvent(Event):
     encoded_track: str
     reason: models.TrackEndReason
 
-    @property
-    def track(self) -> ...:
-        ...
-
     @classmethod
     def from_payload(cls, data: dict) -> TrackEndEvent:
         return cls(
@@ -104,10 +81,6 @@ class TrackExceptionEvent(Event):
     guild_id: int
     encoded_track: str
     exception: models.TrackException
-
-    @property
-    def track(self) -> ...:
-        ...
 
     @classmethod
     def from_payload(cls, data: dict) -> TrackExceptionEvent:

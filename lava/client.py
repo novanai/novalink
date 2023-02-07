@@ -6,7 +6,6 @@ import logging
 import typing
 
 import aiohttp
-import attr
 
 from lava import errors, events, models, utils
 
@@ -126,7 +125,9 @@ class Lavalink:
                     self.dispatch(events.PlayerUpdateEvent.from_payload(data))
 
                 elif data["op"] == "stats":
-                    self.dispatch(events.StatsEvent.from_payload(data))
+                    self.dispatch(
+                        events.StatsEvent.from_payload(data) # what's up here?
+                    )
 
                 elif data["op"] == "event":
                     if data["type"] == "TrackStartEvent":
@@ -159,11 +160,12 @@ class Lavalink:
         return decorator
 
     def handle_voice_server_update(
-        self, guild_id: int, endpoint: str, token: str
+        self, guild_id: int, endpoint: str | None, token: str
     ) -> None:
-        # Handle endpoint = None disconnect
+        # TODO: Handle endpoint = None disconnect
         if self.voice_states.get(guild_id):
-            self.voice_states[guild_id].endpoint = endpoint.replace("wss://", "")
+            if endpoint:
+                self.voice_states[guild_id].endpoint = endpoint.replace("wss://", "")
             self.voice_states[guild_id].token = token
 
     def handle_voice_state_update(
@@ -180,56 +182,69 @@ class Lavalink:
                 "", "", session_id, None, None
             )
 
-    ## REST API METHODS
+    # REST API METHODS
 
     async def request(
-        self, method: str, path: str, data: dict | None = None
+        self, method: str, path: str, params: dict = {}, data: dict | list | None = None
     ) -> typing.Any:
+        params["trace"] = "true"
+
         async with self.session.request(
             method,
-            f"{'https' if self.is_ssl else 'http'}://{self.host}:{self.port}/v3/{path}",
+            f"{'https' if self.is_ssl else 'http'}://{self.host}:{self.port}/{path}",
+            params=params,
             json=data,
-            raise_for_status=True,
         ) as res:
-            rdata = await res.json()
+            if res.content_type == "application/json":
+                rdata = await res.json()
+
+                if not res.ok:
+                    raise errors.LavalinkError.from_payload(rdata)
+
+                return rdata
 
             if not res.ok:
-                raise errors.LavalinkError.from_payload(rdata)
+                res.raise_for_status()
 
-            return rdata
+            if res.content_type == "text/plain":
+                return (await res.read()).decode("utf-8")
 
     async def get_players(self) -> list[models.Player]:
         return [
             models.Player.from_payload(p)
-            for p in await self.request("GET", f"sessions/{self.session_id}/players")
+            for p in await self.request("GET", f"v3/sessions/{self.session_id}/players")
         ]
 
     async def get_player(self, guild_id: int) -> models.Player:
         return models.Player.from_payload(
-            await self.request("GET", f"sessions/{self.session_id}/players/{guild_id}")
+            await self.request(
+                "GET", f"v3/sessions/{self.session_id}/players/{guild_id}"
+            )
         )
 
     async def update_player(
         self,
         guild_id: int,
-        no_replace: bool = False,
+        no_replace: bool | None = None,
         encoded_track: str | None = None,
         identifier: str | None = None,
         position: int | None = None,
         end_time: int | None = None,
         volume: int | None = None,
-        paused: int | None = None,
+        paused: bool | None = None,
         filters: models.Filters | None = None,
         voice: models.VoiceState | None = None,
     ) -> models.Player:
-        query = f"sessions/{self.session_id}/players/{guild_id}" + (
-            "?noReplace=true" if no_replace else ""
-        )
-        voice_dict = attr.asdict(voice)
-        # TODO: build dict generation methods
-        voice_dict["sessionId"] = voice_dict["session_id"]
-        voice_dict.pop("connected")
-        voice_dict.pop("ping")
+        query = f"v3/sessions/{self.session_id}/players/{guild_id}"
+        params = {"noReplace": "true"} if no_replace else {}
+
+        if voice:
+            voice_dict = voice.to_payload()
+            voice_dict.pop("connected")
+            voice_dict.pop("ping")
+        else:
+            voice_dict = None
+
         data = {
             "encodedTrack": encoded_track,
             "identifier": identifier,
@@ -237,23 +252,87 @@ class Lavalink:
             "endTime": end_time,
             "volume": volume,
             "paused": paused,
-            "filters": attr.asdict(filters) if filters else None,
+            "filters": filters.to_payload() if filters else None,
             "voice": voice_dict,
         }
         data = utils.remove_null_values(**data)
-        r = await self.request("PATCH", query, data)
-        return models.Player.from_payload(r)
 
-    # Get player
-    # Update Player
-    # Destroy Player
-    # Update session
-    # Track loading
-    # Track Searching
-    # Track Decoding
-    # Get lavalink info
-    # get lavalink stats
-    # get lavalink version
-    # get routeplanner status
-    # unmark a failed address
-    # unmark all failed address
+        return models.Player.from_payload(
+            await self.request("PATCH", query, params, data)
+        )
+
+    async def destroy_player(self, guild_id: int) -> None:
+        await self.request(
+            "DELETE",
+            f"v3/sessions/{self.session_id}/players/{guild_id}",
+        )
+
+    async def update_session(
+        self, resuming_key: str | None = None, timeout: int | None = None
+    ) -> None:
+        # TODO: Add return value?
+        await self.request(
+            "PATCH",
+            f"v3/sessions/{self.session_id}",
+            data=utils.remove_null_values(
+                resumingKey=resuming_key,
+                timeout=timeout,
+            ),
+        )
+
+    async def load_track(self, identifier: str) -> models.LoadTrackResult:
+        return models.LoadTrackResult.from_payload(
+            await self.request("GET", "v3/loadtracks", {"identifier": identifier})
+        )
+
+    async def decode_track(self, encoded: str) -> models.Track:
+        return models.Track.from_payload(
+            await self.request(
+                "GET",
+                "v3/decodetrack",
+                {
+                    "encodedTrack": encoded,
+                },
+            )
+        )
+
+    async def decode_tracks(self, encoded: list[str]) -> list[models.Track]:
+        return [
+            models.Track.from_payload(t)
+            for t in await self.request("GET", "v3/decodetracks", data=encoded)
+        ]
+
+    async def get_lavalink_info(self) -> models.LavalinkInfo:
+        return models.LavalinkInfo.from_payload(
+            await self.request(
+                "GET",
+                "v3/info",
+            )
+        )
+
+    async def get_lavalink_stats(self) -> models.Stats:
+        return models.Stats.from_payload(
+            await self.request(
+                "GET",
+                "v3/stats",
+            )
+        )
+
+    async def get_lavalink_version(self) -> str:
+        return await self.request("GET", "version")
+
+    async def get_routeplanner_status(self) -> models.RoutePlannerStatus:
+        return models.RoutePlannerStatus.from_payload(
+            await self.request("GET", "v3/routeplanner/status")
+        )
+
+    async def unmark_failed_address(self, address: str) -> None:
+        await self.request(
+            "POST", "v3/routeplanner/free/address", data={"address": address}
+        )
+
+    async def unmark_all_failed_addresses(self) -> None:
+        await self.request(
+            "POST",
+            "v3/routeplanner/free/all",
+        )
