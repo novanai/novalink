@@ -7,7 +7,7 @@ import typing
 
 import aiohttp
 
-from lava import errors, events, models, utils
+import errors, events, models, utils
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +24,9 @@ class Lavalink:
         self.voice_states: dict[int, models.VoiceState] = {}
 
         self._session: aiohttp.ClientSession | None = None
-        self._websocket: aiohttp.client._WSRequestContextManager | None = None
+        self._websocket: aiohttp.client._WSRequestContextManager | None = (  # pyright: ignore [reportPrivateUsage]
+            None
+        )
 
         self.event_listeners: dict[
             typing.Type[events.Event], list[events.EventsCallbackT]
@@ -126,7 +128,7 @@ class Lavalink:
 
                 elif data["op"] == "stats":
                     self.dispatch(
-                        events.StatsEvent.from_payload(data) # what's up here?
+                        events.StatsEvent.from_payload(data)  # what's up here?
                     )
 
                 elif data["op"] == "event":

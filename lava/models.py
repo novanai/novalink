@@ -1,30 +1,94 @@
 from __future__ import annotations
 
+import abc
 import datetime
 import enum
+import typing
+import typing_extensions
 
 import attr
 
+from .types import PayloadType, is_payload_list, is_payload_list_nullable, is_str_list
+
+
+class BaseLavalinkModel(abc.ABC):
+    @classmethod
+    @abc.abstractmethod
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        ...
+
+    @classmethod
+    def from_payloads(
+        cls, data: typing.Iterable[PayloadType]
+    ) -> tuple[typing_extensions.Self]:
+        return tuple(cls.from_payload(d) for d in data)
+
+    @typing.overload
+    @classmethod
+    def from_payload_nullable(cls, data: PayloadType) -> typing_extensions.Self:
+        ...
+
+    @typing.overload
+    @classmethod
+    def from_payload_nullable(cls, data: None) -> None:
+        ...
+
+    @classmethod
+    def from_payload_nullable(
+        cls, data: PayloadType | None
+    ) -> typing_extensions.Self | None:
+        return cls.from_payload(data) if data is not None else None
+
+    @typing.overload
+    @classmethod
+    def from_payloads_nullable(
+        cls, data: typing.Iterable[PayloadType]
+    ) -> tuple[typing_extensions.Self]:
+        ...
+
+    @typing.overload
+    @classmethod
+    def from_payloads_nullable(cls, data: None) -> None:
+        ...
+
+    @classmethod
+    def from_payloads_nullable(
+        cls, data: typing.Iterable[PayloadType] | None
+    ) -> tuple[typing_extensions.Self] | None:
+        return tuple(cls.from_payload(d) for d in data) if data is not None else None
+
 
 @attr.define()
-class PlayerState:
+class PlayerState(BaseLavalinkModel):
     time: datetime.datetime
     position: datetime.timedelta
     connected: bool
     ping: datetime.timedelta
 
     @classmethod
-    def from_payload(cls, data: dict) -> PlayerState:
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        time = data["time"]
+        position = data["position"]
+        connected = data["connected"]
+        ping = data["ping"]
+
+        assert (
+            isinstance(time, int)
+            and isinstance(position, int)
+            and isinstance(connected, bool)
+            and isinstance(ping, int)
+        )
+
         return cls(
-            datetime.datetime.fromtimestamp(data["time"] / 1000),
-            datetime.timedelta(milliseconds=data["position"]),
-            data["connected"],
-            datetime.timedelta(milliseconds=data["ping"]),
+            datetime.datetime.fromtimestamp(time / 1000),
+            datetime.timedelta(milliseconds=position),
+            connected,
+            datetime.timedelta(milliseconds=ping),
         )
 
 
 @attr.define()
-class Stats:
+class Stats(BaseLavalinkModel):
     players: int
     playing_players: int
     uptime: datetime.timedelta
@@ -33,14 +97,30 @@ class Stats:
     frame_stats: FrameStats | None
 
     @classmethod
-    def from_payload(cls, data: dict) -> Stats:
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        players = data["players"]
+        playing_players = data["playing_players"]
+        uptime = data["uptime"]
+        memory = data["memory"]
+        cpu = data["cpu"]
+        frame_stats = data.get("frameStats")
+
+        assert (
+            isinstance(players, int)
+            and isinstance(playing_players, int)
+            and isinstance(uptime, int)
+            and isinstance(memory, dict)
+            and isinstance(cpu, dict)
+            and isinstance(frame_stats, dict | None)
+        )
+
         return cls(
-            data["players"],
-            data["playingPlayers"],
-            datetime.timedelta(milliseconds=data["uptime"]),
-            Memory.from_payload(data["memory"]),
-            CPU.from_payload(data["cpu"]),
-            FrameStats.from_payload(f) if (f := data.get("frameStats")) else None,
+            players,
+            playing_players,
+            datetime.timedelta(milliseconds=uptime),
+            Memory.from_payload(memory),
+            CPU.from_payload(cpu),
+            FrameStats.from_payload_nullable(frame_stats),
         )
 
 
@@ -52,43 +132,62 @@ class Memory:
     reservable: int
 
     @classmethod
-    def from_payload(cls, data: dict) -> Memory:
-        return cls(
-            data["free"],
-            data["used"],
-            data["allocated"],
-            data["reservable"],
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        free = data["free"]
+        used = data["used"]
+        allocated = data["allocated"]
+        reservable = data["reservable"]
+
+        assert (
+            isinstance(free, int)
+            and isinstance(used, int)
+            and isinstance(allocated, int)
+            and isinstance(reservable, int)
         )
+
+        return cls(free, used, allocated, reservable)
 
 
 @attr.define()
-class CPU:
+class CPU(BaseLavalinkModel):
     cores: int
     system_load: float
     lavalink_load: float
 
     @classmethod
-    def from_payload(cls, data: dict) -> CPU:
-        return cls(
-            data["cores"],
-            data["systemLoad"],
-            data["lavalinkLoad"],
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        cores = data["cores"]
+        system_load = data["systemLoad"]
+        lavalink_load = data["lavalinkLoad"]
+
+        assert (
+            isinstance(cores, int)
+            and isinstance(system_load, float)
+            and isinstance(lavalink_load, float)
         )
+
+        return cls(cores, system_load, lavalink_load)
 
 
 @attr.define()
-class FrameStats:
+class FrameStats(BaseLavalinkModel):
     sent: int
     nulled: int
     deficit: int
 
     @classmethod
-    def from_payload(cls, data: dict) -> FrameStats:
-        return cls(
-            data["sent"],
-            data["nulled"],
-            data["deficit"],
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        sent = data["sent"]
+        nulled = data["nulled"]
+        deficit = data["deficit"]
+
+        assert (
+            isinstance(sent, int)
+            and isinstance(nulled, int)
+            and isinstance(deficit, int)
         )
+
+        return cls(sent, nulled, deficit)
 
 
 class TrackEndReason(enum.Enum):
@@ -106,22 +205,28 @@ class ExceptionSeverity(enum.Enum):
 
 
 @attr.define()
-class TrackException:
+class TrackException(BaseLavalinkModel):
     message: str | None
     severity: ExceptionSeverity
     cause: str
 
     @classmethod
-    def from_payload(cls, data: dict) -> TrackException:
-        return cls(
-            data["message"],
-            ExceptionSeverity(data["severity"]),
-            data["cause"],
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        message = data.get("message")
+        severity = data["severity"]
+        cause = data["cause"]
+
+        assert (
+            isinstance(message, str | None)
+            and isinstance(severity, dict)
+            and isinstance(cause, str)
         )
+
+        return cls(message, ExceptionSeverity(severity), cause)
 
 
 @attr.define()
-class Player:
+class Player(BaseLavalinkModel):
     guild_id: int
     track: Track | None
     volume: int
@@ -130,29 +235,50 @@ class Player:
     filters: Filters
 
     @classmethod
-    def from_payload(cls, data: dict) -> Player:
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        guild_id = data["guildId"]
+        track = data.get("track")
+        volume = data["volume"]
+        paused = data["paused"]
+        voice = data["voice"]
+        filters = data["filters"]
+
+        assert (
+            isinstance(guild_id, int)
+            and isinstance(track, dict | None)
+            and isinstance(volume, int)
+            and isinstance(paused, bool)
+            and isinstance(voice, dict)
+            and isinstance(filters, dict)
+        )
+
         return cls(
-            int(data["guildId"]),
-            Track.from_payload(t) if (t := data["track"]) else None,
-            data["volume"],
-            data["paused"],
-            VoiceState.from_payload(data["voice"]),
-            Filters.from_payload(data["filters"]),
+            guild_id,
+            Track.from_payload_nullable(track),
+            volume,
+            paused,
+            VoiceState.from_payload(voice),
+            Filters.from_payload(filters),
         )
 
 
 @attr.define()
-class Track:
+class Track(BaseLavalinkModel):
     encoded: str
     info: TrackInfo
 
     @classmethod
-    def from_payload(cls, data: dict) -> Track:
-        return cls(data["encoded"], TrackInfo.from_payload(data["info"]))
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        encoded = data["encoded"]
+        info = data["info"]
+
+        assert isinstance(encoded, str) and isinstance(info, dict)
+
+        return cls(encoded, TrackInfo.from_payload(info))
 
 
 @attr.define()
-class TrackInfo:
+class TrackInfo(BaseLavalinkModel):
     identifier: str
     is_seekable: bool
     author: str
@@ -164,22 +290,44 @@ class TrackInfo:
     source_name: str
 
     @classmethod
-    def from_payload(cls, data: dict) -> TrackInfo:
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        identifier = data["identifier"]
+        is_seekable = data["isSeekable"]
+        author = data["author"]
+        length = data["length"]
+        is_stream = data["isStream"]
+        position = data["position"]
+        title = data["title"]
+        uri = data["uri"]
+        source_name = data["sourceName"]
+
+        assert (
+            isinstance(identifier, str)
+            and isinstance(is_seekable, bool)
+            and isinstance(author, str)
+            and isinstance(length, int)
+            and isinstance(is_stream, bool)
+            and isinstance(position, int)
+            and isinstance(title, str)
+            and isinstance(uri, str | None)
+            and isinstance(source_name, str)
+        )
+
         return cls(
-            data["identifier"],
-            data["isSeekable"],
-            data["author"],
-            datetime.timedelta(milliseconds=data["length"]),
-            data["isStream"],
-            datetime.timedelta(milliseconds=data["position"]),
-            data["title"],
-            data["uri"],
-            data["sourceName"],
+            identifier,
+            is_seekable,
+            author,
+            datetime.timedelta(milliseconds=length),
+            is_stream,
+            datetime.timedelta(milliseconds=position),
+            title,
+            uri,
+            source_name,
         )
 
 
 @attr.define()
-class VoiceState:
+class VoiceState(BaseLavalinkModel):
     token: str
     endpoint: str
     session_id: str
@@ -187,16 +335,30 @@ class VoiceState:
     ping: int | None
 
     @classmethod
-    def from_payload(cls, data: dict) -> VoiceState:
-        return cls(
-            data["token"],
-            data["endpoint"],
-            data["sessionId"],
-            data.get("connected"),
-            data.get("ping"),
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        token = data["token"]
+        endpoint = data["endpoint"]
+        session_id = data["sessionId"]
+        connected = data.get("connected")
+        ping = data.get("ping")
+
+        assert (
+            isinstance(token, str)
+            and isinstance(endpoint, str)
+            and isinstance(session_id, str)
+            and isinstance(connected, bool | None)
+            and isinstance(ping, int | None)
         )
 
-    def to_payload(self) -> dict:
+        return cls(
+            token,
+            endpoint,
+            session_id,
+            connected,
+            ping,
+        )
+
+    def to_payload(self) -> PayloadType:
         return {
             "token": self.token,
             "endpoint": self.endpoint,
@@ -207,9 +369,9 @@ class VoiceState:
 
 
 @attr.define()
-class Filters:
+class Filters(BaseLavalinkModel):
     volume: float | None
-    equalizers: list[Equalizer] | None
+    equalizers: tuple[Equalizer] | None
     karaoke: Karaoke | None
     timescale: Timescale | None
     tremolo: Tremolo | None
@@ -220,23 +382,46 @@ class Filters:
     low_pass: LowPass | None
 
     @classmethod
-    def from_payload(cls, data: dict) -> Filters:
-        return cls(
-            data.get("volume"),
-            [Equalizer.from_payload(thing) for thing in e]
-            if (e := data.get("equalizer"))
-            else None,
-            Karaoke.from_payload(t) if (t := data.get("karaoke")) else None,
-            Timescale.from_payload(t) if (t := data.get("timescale")) else None,
-            Tremolo.from_payload(t) if (t := data.get("tremolo")) else None,
-            Vibrato.from_payload(t) if (t := data.get("vibrato")) else None,
-            Rotation.from_payload(t) if (t := data.get("rotation")) else None,
-            Distortion.from_payload(t) if (t := data.get("distortion")) else None,
-            ChannelMix.from_payload(t) if (t := data.get("channelMix")) else None,
-            LowPass.from_payload(t) if (t := data.get("lowPass")) else None,
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        volume = data.get("volume")
+        equalizers = data.get("equalizers")
+        karaoke = data.get("karaoke")
+        timescale = data.get("timescale")
+        tremolo = data.get("tremolo")
+        vibrato = data.get("vibrato")
+        rotation = data.get("rotation")
+        distortion = data.get("distortion")
+        channel_mix = data.get("channelMix")
+        low_pass = data.get("lowPass")
+
+        assert (
+            isinstance(volume, float | None)
+            and isinstance(equalizers, list | None)
+            and is_payload_list_nullable(equalizers)
+            and isinstance(karaoke, dict | None)
+            and isinstance(timescale, dict | None)
+            and isinstance(tremolo, dict | None)
+            and isinstance(vibrato, dict | None)
+            and isinstance(rotation, dict | None)
+            and isinstance(distortion, dict | None)
+            and isinstance(channel_mix, dict | None)
+            and isinstance(low_pass, dict | None)
         )
 
-    def to_payload(self) -> dict:
+        return cls(
+            volume,
+            Equalizer.from_payloads_nullable(equalizers),
+            Karaoke.from_payload_nullable(karaoke),
+            Timescale.from_payload_nullable(timescale),
+            Tremolo.from_payload_nullable(tremolo),
+            Vibrato.from_payload_nullable(vibrato),
+            Rotation.from_payload_nullable(rotation),
+            Distortion.from_payload_nullable(distortion),
+            ChannelMix.from_payload_nullable(channel_mix),
+            LowPass.from_payload_nullable(low_pass),
+        )
+
+    def to_payload(self) -> PayloadType:
         return {
             "volume": self.volume,
             "equalizer": [attr.asdict(e) for e in self.equalizers]
@@ -254,32 +439,44 @@ class Filters:
 
 
 @attr.define()
-class Equalizer:
+class Equalizer(BaseLavalinkModel):
     band: int
     gain: float
 
     @classmethod
-    def from_payload(cls, data: dict) -> Equalizer:
-        return cls(data["band"], data["gain"])
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        band = data["band"]
+        gain = data["gain"]
+
+        assert isinstance(band, int) and isinstance(gain, float)
+
+        return cls(band, gain)
 
 
 @attr.define()
-class Karaoke:
+class Karaoke(BaseLavalinkModel):
     level: float | None
     mono_level: float | None
     filter_band: float | None
     filter_width: float | None
 
     @classmethod
-    def from_payload(cls, data: dict) -> Karaoke:
-        return cls(
-            data.get("level"),
-            data.get("monoLevel"),
-            data.get("filterBand"),
-            data.get("filterWidth"),
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        level = data.get("level")
+        mono_level = data.get("monoLevel")
+        filter_band = data.get("filterBand")
+        filter_width = data.get("filterWidth")
+
+        assert (
+            isinstance(level, float | None)
+            and isinstance(mono_level, float | None)
+            and isinstance(filter_band, float | None)
+            and isinstance(filter_width, float | None)
         )
 
-    def to_payload(self) -> dict:
+        return cls(level, mono_level, filter_band, filter_width)
+
+    def to_payload(self) -> PayloadType:
         return {
             "level": self.level,
             "monoLevel": self.mono_level,
@@ -289,62 +486,74 @@ class Karaoke:
 
 
 @attr.define()
-class Timescale:
+class Timescale(BaseLavalinkModel):
     speed: float | None
     pitch: float | None
     rate: float | None
 
     @classmethod
-    def from_payload(cls, data: dict) -> Timescale:
-        return cls(
-            data.get("speed"),
-            data.get("pitch"),
-            data.get("rate"),
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        speed = data.get("speed")
+        pitch = data.get("pitch")
+        rate = data.get("rate")
+
+        assert (
+            isinstance(speed, float | None)
+            and isinstance(pitch, float | None)
+            and isinstance(rate, float | None)
         )
+
+        return cls(speed, pitch, rate)
 
 
 @attr.define()
-class Tremolo:
+class Tremolo(BaseLavalinkModel):
     frequency: float | None
     depth: float | None
 
     @classmethod
-    def from_payload(cls, data: dict) -> Tremolo:
-        return cls(
-            data.get("frequency"),
-            data.get("depth"),
-        )
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        frequency = data.get("frequency")
+        depth = data.get("depth")
+
+        assert isinstance(frequency, float | None) and isinstance(depth, float | None)
+
+        return cls(frequency, depth)
 
 
 @attr.define()
-class Vibrato:
+class Vibrato(BaseLavalinkModel):
     frequency: float | None
     depth: float | None
 
     @classmethod
-    def from_payload(cls, data: dict) -> Vibrato:
-        return cls(
-            data.get("frequency"),
-            data.get("depth"),
-        )
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        frequency = data.get("frequency")
+        depth = data.get("depth")
+
+        assert isinstance(frequency, float | None) and isinstance(depth, float | None)
+
+        return cls(frequency, depth)
 
 
 @attr.define()
-class Rotation:
+class Rotation(BaseLavalinkModel):
     rotation_hz: float | None
 
     @classmethod
-    def from_payload(cls, data: dict) -> Rotation:
-        return cls(
-            data.get("rotationHz"),
-        )
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        rotation_hz = data.get("rotationHz")
 
-    def to_payload(self) -> dict:
+        assert isinstance(rotation_hz, float | None)
+
+        return cls(rotation_hz)
+
+    def to_payload(self) -> PayloadType:
         return {"rotationHz": self.rotation_hz}
 
 
 @attr.define()
-class Distortion:
+class Distortion(BaseLavalinkModel):
     sin_offset: float | None
     sin_scale: float | None
     cos_offset: float | None
@@ -355,19 +564,39 @@ class Distortion:
     scale: float | None
 
     @classmethod
-    def from_payload(cls, data: dict) -> Distortion:
-        return cls(
-            data.get("sinOffset"),
-            data.get("sinScale"),
-            data.get("cosOffset"),
-            data.get("cosScale"),
-            data.get("tanOffset"),
-            data.get("tanScale"),
-            data.get("offset"),
-            data.get("scale"),
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        sin_offset = data.get("sinOffset")
+        sin_scale = data.get("sinScale")
+        cos_offset = data.get("cosOffset")
+        cos_scale = data.get("cosScale")
+        tan_offset = data.get("tanOffset")
+        tan_scale = data.get("tanScale")
+        offset = data.get("offset")
+        scale = data.get("scale")
+
+        assert (
+            isinstance(sin_offset, float | None)
+            and isinstance(sin_scale, float | None)
+            and isinstance(cos_offset, float | None)
+            and isinstance(cos_scale, float | None)
+            and isinstance(tan_offset, float | None)
+            and isinstance(tan_scale, float | None)
+            and isinstance(offset, float | None)
+            and isinstance(scale, float | None)
         )
 
-    def to_payload(self) -> dict:
+        return cls(
+            sin_offset,
+            sin_scale,
+            cos_offset,
+            cos_scale,
+            tan_offset,
+            tan_scale,
+            offset,
+            scale,
+        )
+
+    def to_payload(self) -> PayloadType:
         return {
             "sinOffset": self.sin_offset,
             "sinScale": self.sin_scale,
@@ -381,22 +610,34 @@ class Distortion:
 
 
 @attr.define()
-class ChannelMix:
+class ChannelMix(BaseLavalinkModel):
     left_to_left: float | None
     left_to_right: float | None
     right_to_left: float | None
     right_to_right: float | None
 
     @classmethod
-    def from_payload(cls, data: dict) -> ChannelMix:
-        return cls(
-            data.get("leftToLeft"),
-            data.get("leftToRight"),
-            data.get("rightToLeft"),
-            data.get("rightToRight"),
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        left_to_left = data.get("leftToLeft")
+        left_to_right = data.get("leftToRight")
+        right_to_left = data.get("rightToLeft")
+        right_to_right = data.get("rightToRight")
+
+        assert (
+            isinstance(left_to_left, float | None)
+            and isinstance(left_to_right, float | None)
+            and isinstance(right_to_left, float | None)
+            and isinstance(right_to_right, float | None)
         )
 
-    def to_payload(self) -> dict:
+        return cls(
+            left_to_left,
+            left_to_right,
+            right_to_left,
+            right_to_right,
+        )
+
+    def to_payload(self) -> PayloadType:
         return {
             "leftToLeft": self.left_to_left,
             "leftToRight": self.left_to_right,
@@ -406,34 +647,45 @@ class ChannelMix:
 
 
 @attr.define()
-class LowPass:
+class LowPass(BaseLavalinkModel):
     smoothing: float | None
 
     @classmethod
-    def from_payload(cls, data: dict) -> LowPass:
-        return cls(
-            data.get("smoothing"),
-        )
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        smoothing = data.get("smoothing")
+
+        assert isinstance(smoothing, float | None)
+
+        return cls(smoothing)
 
 
 @attr.define()
-class LoadTrackResult:
+class LoadTrackResult(BaseLavalinkModel):
     load_type: LoadResultType
     playlist_info: PlaylistInfo | None
-    tracks: list[Track] | None
+    tracks: tuple[Track] | None
     exception: TrackException | None
 
     @classmethod
-    def from_payload(cls, data: dict) -> LoadTrackResult:
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        load_type = data.get("loadType")
+        playlist_info = data.get("playlistInfo")
+        tracks = data.get("tracks")
+        exception = data.get("exception")
+
+        assert (
+            isinstance(load_type, dict)
+            and isinstance(playlist_info, dict | None)
+            and isinstance(tracks, list | None)
+            and is_payload_list_nullable(tracks)
+            and isinstance(exception, dict | None)
+        )
+
         return cls(
-            LoadResultType(data["loadType"]),
-            PlaylistInfo.from_payload(d)
-            if (d := data["playlistInfo"])
-            else None,  # object will always be there but may be empty.
-            [Track.from_payload(t) for t in tracks]
-            if (tracks := data["tracks"])
-            else None,  # object will always be there but may be empty.
-            TrackException.from_payload(e) if (e := data.get("exception")) else None,
+            LoadResultType(load_type),
+            PlaylistInfo.from_payload_nullable(playlist_info),
+            Track.from_payloads_nullable(tracks),
+            TrackException.from_payload_nullable(exception),
         )
 
 
@@ -446,45 +698,70 @@ class LoadResultType(enum.Enum):
 
 
 @attr.define()
-class PlaylistInfo:
+class PlaylistInfo(BaseLavalinkModel):
     name: str | None
     selected_track: int | None
 
     @classmethod
-    def from_payload(cls, data: dict) -> PlaylistInfo:
-        return cls(
-            data.get("name"),
-            data.get("selectedTrack"),
-        )
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        name = data.get("name")
+        selected_track = data.get("selectedTrack")
+
+        assert isinstance(name, str | None) and isinstance(selected_track, int | None)
+
+        return cls(name, selected_track)
 
 
 @attr.define()
-class LavalinkInfo:
+class LavalinkInfo(BaseLavalinkModel):
     version: Version
     build_time: datetime.datetime
     git: Git
     jvm: str
     lavaplayer: str
-    source_managers: list[str]
-    filters: list[str]
-    plugins: list[Plugin]
+    source_managers: tuple[str]
+    filters: tuple[str]
+    plugins: tuple[Plugin]
 
     @classmethod
-    def from_payload(cls, data: dict) -> LavalinkInfo:
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        version = data.get("version")
+        build_time = data.get("buildTime")
+        git = data.get("git")
+        jvm = data.get("jvm")
+        lavaplayer = data.get("lavaplayer")
+        source_managers = data.get("sourceManagers")
+        filters = data.get("filters")
+        plugins = data.get("plugins")
+
+        assert (
+            isinstance(version, dict)
+            and isinstance(build_time, int)
+            and isinstance(git, dict)
+            and isinstance(jvm, str)
+            and isinstance(lavaplayer, str)
+            and isinstance(source_managers, list)
+            and is_str_list(source_managers)
+            and isinstance(filters, list)
+            and is_str_list(filters)
+            and isinstance(plugins, list)
+            and is_payload_list(plugins)
+        )
+
         return cls(
-            Version.from_payload(data["version"]),
-            datetime.datetime.fromtimestamp(data["buildTime"] / 1000),
-            Git.from_payload(data["git"]),
-            data["jvm"],
-            data["lavaplayer"],
-            data["sourceManagers"],
-            data["filters"],
-            [Plugin.from_payload(p) for p in data["plugins"]],
+            Version.from_payload(version),
+            datetime.datetime.fromtimestamp(build_time / 1000),
+            Git.from_payload(git),
+            jvm,
+            lavaplayer,
+            (*source_managers,),
+            (*filters,),
+            Plugin.from_payloads(plugins),
         )
 
 
 @attr.define()
-class Version:
+class Version(BaseLavalinkModel):
     semver: str
     major: int
     minor: int
@@ -492,46 +769,72 @@ class Version:
     pre_release: str | None
 
     @classmethod
-    def from_payload(cls, data: dict) -> Version:
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        semver = data.get("semver")
+        major = data.get("major")
+        minor = data.get("minor")
+        patch = data.get("patch")
+        pre_release = data.get("preRelease")
+
+        assert (
+            isinstance(semver, str)
+            and isinstance(major, int)
+            and isinstance(minor, int)
+            and isinstance(patch, int)
+            and isinstance(pre_release, str | None)
+        )
+
         return cls(
-            data["semver"],
-            data["major"],
-            data["minor"],
-            data["patch"],
-            data["preRelease"],
+            semver,
+            major,
+            minor,
+            patch,
+            pre_release,
         )
 
 
 @attr.define()
-class Git:
+class Git(BaseLavalinkModel):
     branch: str
     commit: str
     commit_time: datetime.datetime
 
     @classmethod
-    def from_payload(cls, data: dict) -> Git:
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        branch = data.get("branch")
+        commit = data.get("commit")
+        commit_time = data.get("commitTime")
+
+        assert (
+            isinstance(branch, str)
+            and isinstance(commit, str)
+            and isinstance(commit_time, int)
+        )
+
         return cls(
-            data["branch"],
-            data["commit"],
-            datetime.datetime.fromtimestamp(data["commitTime"] / 1000),
+            branch,
+            commit,
+            datetime.datetime.fromtimestamp(commit_time / 1000),
         )
 
 
 @attr.define()
-class Plugin:
+class Plugin(BaseLavalinkModel):
     name: str
     version: str
 
     @classmethod
-    def from_payload(cls, data: dict) -> Plugin:
-        return cls(
-            data["name"],
-            data["version"],
-        )
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        name = data.get("name")
+        version = data.get("version")
+
+        assert isinstance(name, str) and isinstance(version, str)
+
+        return cls(name, version)
 
 
 @attr.define()
-class RoutePlannerStatus:
+class RoutePlannerStatus(BaseLavalinkModel):
     _type: RoutePlannerType
     details: Details | None
 
@@ -540,11 +843,13 @@ class RoutePlannerStatus:
         return self._type
 
     @classmethod
-    def from_payload(cls, data: dict) -> RoutePlannerStatus:
-        return cls(
-            RoutePlannerType(data["class"]),
-            Details.from_payload(d) if (d := data["details"]) else None,
-        )
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        type = data.get("type")
+        details = data.get("details")
+
+        assert isinstance(type, str) and isinstance(details, dict | None)
+
+        return cls(RoutePlannerType(type), Details.from_payload_nullable(details))
 
 
 class RoutePlannerType(enum.Enum):
@@ -555,9 +860,9 @@ class RoutePlannerType(enum.Enum):
 
 
 @attr.define()
-class Details:
+class Details(BaseLavalinkModel):
     ip_block: IPBlock
-    failing_addresses: list[FailingAddress]
+    failing_addresses: tuple[FailingAddress]
     rotate_index: str
     ip_index: str
     current_address: str
@@ -565,20 +870,39 @@ class Details:
     block_index: str
 
     @classmethod
-    def from_payload(cls, data: dict) -> Details:
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        ip_block = data.get("ipBlock")
+        failing_addresses = data.get("failingAddresses")
+        rotate_index = data.get("rotateIndex")
+        ip_index = data.get("ipIndex")
+        current_address = data.get("currentAddress")
+        current_address_index = data.get("currentAddressIndex")
+        block_index = data.get("blockIndex")
+
+        assert (
+            isinstance(ip_block, dict)
+            and isinstance(failing_addresses, list)
+            and is_payload_list(failing_addresses)
+            and isinstance(rotate_index, str)
+            and isinstance(ip_index, str)
+            and isinstance(current_address, str)
+            and isinstance(current_address_index, str)
+            and isinstance(block_index, str)
+        )
+
         return cls(
-            IPBlock.from_payload(data["ipBlock"]),
-            [FailingAddress.from_payload(a) for a in data["failingAddresses"]],
-            data["rotateIndex"],
-            data["ipIndex"],
-            data["currentAddress"],
-            data["currentAddressIndex"],
-            data["blockIndex"],
+            IPBlock.from_payload(ip_block),
+            FailingAddress.from_payloads(failing_addresses),
+            rotate_index,
+            ip_index,
+            current_address,
+            current_address_index,
+            block_index,
         )
 
 
 @attr.define()
-class IPBlock:
+class IPBlock(BaseLavalinkModel):
     _type: IPBlockType
     size: str
 
@@ -587,10 +911,15 @@ class IPBlock:
         return self._type
 
     @classmethod
-    def from_payload(cls, data: dict) -> IPBlock:
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        type = data.get("type")
+        size = data.get("size")
+
+        assert isinstance(type, str) and isinstance(size, str)
+
         return cls(
-            IPBlockType(data["type"]),
-            data["size"],
+            IPBlockType(type),
+            size,
         )
 
 
@@ -600,13 +929,18 @@ class IPBlockType(enum.Enum):
 
 
 @attr.define()
-class FailingAddress:
+class FailingAddress(BaseLavalinkModel):
     address: str
     failing_time: datetime.datetime
 
     @classmethod
-    def from_payload(cls, data: dict) -> FailingAddress:
+    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+        address = data.get("address")
+        failing_time = data.get("failingTime")
+
+        assert isinstance(address, str) and isinstance(failing_time, int)
+
         return cls(
-            data["address"],
-            datetime.datetime.fromtimestamp(data["failingTimestamp"] / 1000),
+            address,
+            datetime.datetime.fromtimestamp(failing_time / 1000),
         )
