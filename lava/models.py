@@ -4,11 +4,12 @@ import abc
 import datetime
 import enum
 import typing
-import typing_extensions
 
 import attr
+import typing_extensions
 
-from .types import PayloadType, is_payload_list, is_payload_list_nullable, is_str_list
+from .types import (PayloadType, is_payload_list, is_payload_list_nullable,
+                    is_str_list)
 
 
 class BaseLavalinkModel(abc.ABC):
@@ -61,29 +62,29 @@ class BaseLavalinkModel(abc.ABC):
 @attr.define()
 class PlayerState(BaseLavalinkModel):
     time: datetime.datetime
-    position: datetime.timedelta
+    position: datetime.timedelta | None
     connected: bool
-    ping: datetime.timedelta
+    ping: datetime.timedelta | None
 
     @classmethod
     def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
         time = data["time"]
-        position = data["position"]
+        position = data.get("position")
         connected = data["connected"]
         ping = data["ping"]
 
         assert (
             isinstance(time, int)
-            and isinstance(position, int)
+            and isinstance(position, int | None)
             and isinstance(connected, bool)
             and isinstance(ping, int)
         )
 
         return cls(
             datetime.datetime.fromtimestamp(time / 1000),
-            datetime.timedelta(milliseconds=position),
+            datetime.timedelta(milliseconds=position) if position else None,
             connected,
-            datetime.timedelta(milliseconds=ping),
+            datetime.timedelta(milliseconds=ping) if ping != -1 else None,
         )
 
 
@@ -99,7 +100,7 @@ class Stats(BaseLavalinkModel):
     @classmethod
     def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
         players = data["players"]
-        playing_players = data["playing_players"]
+        playing_players = data["playingPlayers"]
         uptime = data["uptime"]
         memory = data["memory"]
         cpu = data["cpu"]
@@ -212,13 +213,13 @@ class TrackException(BaseLavalinkModel):
 
     @classmethod
     def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
-        message = data.get("message")
+        message = data["message"]
         severity = data["severity"]
         cause = data["cause"]
 
         assert (
             isinstance(message, str | None)
-            and isinstance(severity, dict)
+            and isinstance(severity, str)
             and isinstance(cause, str)
         )
 
@@ -237,14 +238,15 @@ class Player(BaseLavalinkModel):
     @classmethod
     def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
         guild_id = data["guildId"]
-        track = data.get("track")
+        track = data["track"]
         volume = data["volume"]
         paused = data["paused"]
         voice = data["voice"]
         filters = data["filters"]
 
         assert (
-            isinstance(guild_id, int)
+            isinstance(guild_id, str)
+            and guild_id.isdigit()
             and isinstance(track, dict | None)
             and isinstance(volume, int)
             and isinstance(paused, bool)
@@ -253,7 +255,7 @@ class Player(BaseLavalinkModel):
         )
 
         return cls(
-            guild_id,
+            int(guild_id),
             Track.from_payload_nullable(track),
             volume,
             paused,
@@ -668,23 +670,24 @@ class LoadTrackResult(BaseLavalinkModel):
 
     @classmethod
     def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
-        load_type = data.get("loadType")
-        playlist_info = data.get("playlistInfo")
-        tracks = data.get("tracks")
+        load_type = data["loadType"]
+        playlist_info = data["playlistInfo"]
+        tracks = data["tracks"]
         exception = data.get("exception")
 
         assert (
             isinstance(load_type, dict)
-            and isinstance(playlist_info, dict | None)
-            and isinstance(tracks, list | None)
-            and is_payload_list_nullable(tracks)
+            and isinstance(playlist_info, dict)
+            and isinstance(tracks, list)
+            and is_payload_list(tracks)
             and isinstance(exception, dict | None)
         )
 
         return cls(
             LoadResultType(load_type),
-            PlaylistInfo.from_payload_nullable(playlist_info),
-            Track.from_payloads_nullable(tracks),
+            # `None` for empty results
+            PlaylistInfo.from_payload(playlist_info) if playlist_info else None,
+            Track.from_payloads(tracks) if tracks else None,
             TrackException.from_payload_nullable(exception),
         )
 
@@ -725,14 +728,14 @@ class LavalinkInfo(BaseLavalinkModel):
 
     @classmethod
     def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
-        version = data.get("version")
-        build_time = data.get("buildTime")
-        git = data.get("git")
-        jvm = data.get("jvm")
-        lavaplayer = data.get("lavaplayer")
-        source_managers = data.get("sourceManagers")
-        filters = data.get("filters")
-        plugins = data.get("plugins")
+        version = data["version"]
+        build_time = data["buildTime"]
+        git = data["git"]
+        jvm = data["jvm"]
+        lavaplayer = data["lavaplayer"]
+        source_managers = data["sourceManagers"]
+        filters = data["filters"]
+        plugins = data["plugins"]
 
         assert (
             isinstance(version, dict)
@@ -770,11 +773,11 @@ class Version(BaseLavalinkModel):
 
     @classmethod
     def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
-        semver = data.get("semver")
-        major = data.get("major")
-        minor = data.get("minor")
-        patch = data.get("patch")
-        pre_release = data.get("preRelease")
+        semver = data["semver"]
+        major = data["major"]
+        minor = data["minor"]
+        patch = data["patch"]
+        pre_release = data["preRelease"]
 
         assert (
             isinstance(semver, str)
@@ -801,9 +804,9 @@ class Git(BaseLavalinkModel):
 
     @classmethod
     def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
-        branch = data.get("branch")
-        commit = data.get("commit")
-        commit_time = data.get("commitTime")
+        branch = data["branch"]
+        commit = data["commit"]
+        commit_time = data["commitTime"]
 
         assert (
             isinstance(branch, str)
@@ -825,8 +828,8 @@ class Plugin(BaseLavalinkModel):
 
     @classmethod
     def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
-        name = data.get("name")
-        version = data.get("version")
+        name = data["name"]
+        version = data["version"]
 
         assert isinstance(name, str) and isinstance(version, str)
 
@@ -835,21 +838,20 @@ class Plugin(BaseLavalinkModel):
 
 @attr.define()
 class RoutePlannerStatus(BaseLavalinkModel):
-    _type: RoutePlannerType
+    type: RoutePlannerType | None
     details: Details | None
-
-    @property
-    def type(self) -> RoutePlannerType:
-        return self._type
 
     @classmethod
     def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
-        type = data.get("type")
-        details = data.get("details")
+        type = data["type"]
+        details = data["details"]
 
-        assert isinstance(type, str) and isinstance(details, dict | None)
+        assert isinstance(type, str | None) and isinstance(details, dict | None)
 
-        return cls(RoutePlannerType(type), Details.from_payload_nullable(details))
+        return cls(
+            RoutePlannerType(type) if type else None,
+            Details.from_payload_nullable(details),
+        )
 
 
 class RoutePlannerType(enum.Enum):
@@ -871,13 +873,13 @@ class Details(BaseLavalinkModel):
 
     @classmethod
     def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
-        ip_block = data.get("ipBlock")
-        failing_addresses = data.get("failingAddresses")
-        rotate_index = data.get("rotateIndex")
-        ip_index = data.get("ipIndex")
-        current_address = data.get("currentAddress")
-        current_address_index = data.get("currentAddressIndex")
-        block_index = data.get("blockIndex")
+        ip_block = data["ipBlock"]
+        failing_addresses = data["failingAddresses"]
+        rotate_index = data["rotateIndex"]
+        ip_index = data["ipIndex"]
+        current_address = data["currentAddress"]
+        current_address_index = data["currentAddressIndex"]
+        block_index = data["blockIndex"]
 
         assert (
             isinstance(ip_block, dict)
@@ -903,17 +905,13 @@ class Details(BaseLavalinkModel):
 
 @attr.define()
 class IPBlock(BaseLavalinkModel):
-    _type: IPBlockType
+    type: IPBlockType
     size: str
-
-    @property
-    def type(self) -> IPBlockType:
-        return self._type
 
     @classmethod
     def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
-        type = data.get("type")
-        size = data.get("size")
+        type = data["type"]
+        size = data["size"]
 
         assert isinstance(type, str) and isinstance(size, str)
 
@@ -935,8 +933,8 @@ class FailingAddress(BaseLavalinkModel):
 
     @classmethod
     def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
-        address = data.get("address")
-        failing_time = data.get("failingTime")
+        address = data["address"]
+        failing_time = data["failingTime"]
 
         assert isinstance(address, str) and isinstance(failing_time, int)
 

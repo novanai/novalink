@@ -6,3 +6,4 @@ logs/
 application.yml
 .env
 test_bot.py
+.idea/

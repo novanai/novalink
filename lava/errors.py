@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import datetime
-import typing_extensions
 
 import attr
+import typing_extensions
 
 from .models import BaseLavalinkModel
 from .types import PayloadType

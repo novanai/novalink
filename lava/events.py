@@ -3,12 +3,11 @@ from __future__ import annotations
 import abc
 import datetime
 import typing
-import typing_extensions
 
 import attr
+import typing_extensions
 
-import models
-
+from . import models
 from .types import PayloadType
 
 
@@ -48,8 +47,10 @@ class PlayerUpdateEvent(Event):
         guild_id = data["guildId"]
         state = data["state"]
 
-        assert isinstance(guild_id, int) and isinstance(state, dict)
-        return cls(guild_id, models.PlayerState.from_payload(state))
+        assert (
+            isinstance(guild_id, str) and guild_id.isdigit() and isinstance(state, dict)
+        )
+        return cls(int(guild_id), models.PlayerState.from_payload(state))
 
 
 @attr.define()
@@ -67,9 +68,13 @@ class TrackStartEvent(Event):
         guild_id = data["guildId"]
         encoded_track = data["encodedTrack"]
 
-        assert isinstance(guild_id, int) and isinstance(encoded_track, str)
+        assert (
+            isinstance(guild_id, str)
+            and guild_id.isdigit()
+            and isinstance(encoded_track, str)
+        )
 
-        return cls(guild_id, encoded_track)
+        return cls(int(guild_id), encoded_track)
 
 
 @attr.define()
@@ -82,13 +87,19 @@ class TrackEndEvent(Event):
     def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
         guild_id = data["guildId"]
         encoded_track = data["encodedTrack"]
+        reason = data["reason"]
 
-        assert isinstance(guild_id, int) and isinstance(encoded_track, str)
+        assert (
+            isinstance(guild_id, str)
+            and guild_id.isdigit()
+            and isinstance(encoded_track, str)
+            and isinstance(reason, str)
+        )
 
         return cls(
-            guild_id,
+            int(guild_id),
             encoded_track,
-            models.TrackEndReason(data["reason"]),
+            models.TrackEndReason(reason),
         )
 
 
@@ -105,13 +116,14 @@ class TrackExceptionEvent(Event):
         exception = data["exception"]
 
         assert (
-            isinstance(guild_id, int)
+            isinstance(guild_id, str)
+            and guild_id.isdigit()
             and isinstance(encoded_track, str)
             and isinstance(exception, dict)
         )
 
         return cls(
-            guild_id,
+            int(guild_id),
             encoded_track,
             models.TrackException.from_payload(exception),
         )
@@ -130,19 +142,20 @@ class TrackStuckEvent(Event):
         threshold_ms = data["thresholdMs"]
 
         assert (
-            isinstance(guild_id, int)
+            isinstance(guild_id, str)
+            and guild_id.isdigit()
             and isinstance(encoded_track, str)
             and isinstance(threshold_ms, int)
         )
 
         return cls(
-            guild_id,
+            int(guild_id),
             encoded_track,
             datetime.timedelta(milliseconds=threshold_ms),
         )
 
 
-@attr.define
+@attr.define()
 class WebSocketClosedEvent(Event):
     guild_id: int
     code: int
@@ -157,14 +170,15 @@ class WebSocketClosedEvent(Event):
         by_remote = data["byRemote"]
 
         assert (
-            isinstance(guild_id, int)
+            isinstance(guild_id, str)
+            and guild_id.isdigit()
             and isinstance(code, int)
             and isinstance(reason, str)
             and isinstance(by_remote, bool)
         )
 
         return cls(
-            guild_id,
+            int(guild_id),
             code,
             reason,
             by_remote,

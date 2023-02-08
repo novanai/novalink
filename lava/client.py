@@ -7,7 +7,7 @@ import typing
 
 import aiohttp
 
-import errors, events, models, utils
+from . import errors, events, models, types, utils
 
 log = logging.getLogger(__name__)
 
@@ -20,22 +20,24 @@ class Lavalink:
         self._bot_id: int | None = None
 
         self._session_id: str | None = None
+        self._resume_key: str | None = None
 
         self.voice_states: dict[int, models.VoiceState] = {}
+        self.queues: dict[int, list[models.Track]] = {}
 
         self._session: aiohttp.ClientSession | None = None
-        self._websocket: aiohttp.client._WSRequestContextManager | None = (  # pyright: ignore [reportPrivateUsage]
+        self._websocket: aiohttp.client._WSRequestContextManager | None = (  # pyright: ignore[reportPrivateUsage]
             None
         )
 
         self.event_listeners: dict[
-            typing.Type[events.Event], list[events.EventsCallbackT]
+            typing.Type[events.Event], list[events.EventsCallbackT[events.Event]]
         ] = {}
 
     @property
     def is_ssl(self) -> bool:
         if self._is_ssl is None:
-            raise RuntimeError("Lavalink.connect() was not called.")
+            raise RuntimeError("is_ssl Lavalink.connect() was not called.")
 
         return self._is_ssl
 
@@ -68,6 +70,13 @@ class Lavalink:
         return self._session_id
 
     @property
+    def resume_key(self) -> str:
+        if self._resume_key is None:
+            raise RuntimeError("resume_key Lavalink.connect() was not called.")
+
+        return self._resume_key
+
+    @property
     def session(self) -> aiohttp.ClientSession:
         if not self._session:
             raise RuntimeError("session Lavalink.connect() was not called.")
@@ -75,7 +84,9 @@ class Lavalink:
         return self._session
 
     @property
-    def websocket(self) -> aiohttp.client._WSRequestContextManager:
+    def websocket(
+        self,
+    ) -> aiohttp.client._WSRequestContextManager:  # pyright: ignore[reportPrivateUsage]
         if not self._websocket:
             raise RuntimeError("websocket Lavalink.connect() was not called.")
 
@@ -108,8 +119,10 @@ class Lavalink:
             headers["Resume-Key"] = resume_key
 
         self._session = aiohttp.ClientSession(headers=headers)
-        self._websocket = self._session.ws_connect(
-            f"{'wss' if is_ssl else 'ws'}://{host}:{port}/v3/websocket"
+        self._websocket = (
+            self._session.ws_connect(  # pyright: ignore[reportUnknownMemberType]
+                f"{'wss' if is_ssl else 'ws'}://{host}:{port}/v3/websocket"
+            )
         )
 
         asyncio.create_task(self._start_listening())
@@ -117,42 +130,49 @@ class Lavalink:
     async def _start_listening(self) -> None:
         async with self.websocket as ws:
             async for msg in ws:
-                data: dict = json.loads(msg.data)
+                assert isinstance(
+                    msg.data, str
+                )  # pyright: ignore[reportUnknownMemberType]
+                data: types.PayloadType = json.loads(
+                    msg.data
+                )  # pyright: ignore[reportUnknownMemberType]
 
                 if data["op"] == "ready":
-                    self._session_id = data["sessionId"]
-                    self.dispatch(events.ReadyEvent.from_payload(data))
+                    session_id = data["sessionId"]
+                    assert isinstance(session_id, str)
+                    self._session_id = session_id
+
+                    self.dispatch(events.ReadyEvent, data)
 
                 elif data["op"] == "playerUpdate":
-                    self.dispatch(events.PlayerUpdateEvent.from_payload(data))
+                    self.dispatch(events.PlayerUpdateEvent, data)
 
                 elif data["op"] == "stats":
-                    self.dispatch(
-                        events.StatsEvent.from_payload(data)  # what's up here?
-                    )
+                    self.dispatch(events.StatsEvent, data)
 
                 elif data["op"] == "event":
                     if data["type"] == "TrackStartEvent":
-                        self.dispatch(events.TrackStartEvent.from_payload(data))
+                        self.dispatch(events.TrackStartEvent, data)
                     elif data["type"] == "TrackEndEvent":
-                        self.dispatch(events.TrackEndEvent.from_payload(data))
+                        self.dispatch(events.TrackEndEvent, data)
                     elif data["type"] == "TrackExceptionEvent":
-                        self.dispatch(events.TrackExceptionEvent.from_payload(data))
+                        self.dispatch(events.TrackExceptionEvent, data)
                     elif data["type"] == "TrackStuckEvent":
-                        self.dispatch(events.TrackStuckEvent.from_payload(data))
+                        self.dispatch(events.TrackStuckEvent, data)
                     elif data["type"] == "WebSocketClosedEvent":
-                        self.dispatch(events.WebSocketClosedEvent.from_payload(data))
+                        self.dispatch(events.WebSocketClosedEvent, data)
 
-    def dispatch(self, event: events.Event) -> None:
-        if listeners := self.event_listeners.get(type(event)):
+    def dispatch(self, event_type: type[events.Event], data: types.PayloadType) -> None:
+        if listeners := self.event_listeners.get(event_type):
+            event = event_type.from_payload(data)
             for listener in listeners:
-                asyncio.create_task(listener(event))  # type: ignore[arg-type]
+                asyncio.create_task(listener(event))  # Remaining typing error
 
     def listen(
         self, event_type: typing.Type[events.EventT]
-    ) -> typing.Callable[[events.EventsCallbackT], None]:
+    ) -> typing.Callable[[events.EventsCallbackT[events.Event]], None]:
         def decorator(
-            callback: events.EventsCallbackT,
+            callback: events.EventsCallbackT[events.Event],
         ) -> None:
             if event_type in self.event_listeners:
                 self.event_listeners[event_type].append(callback)
@@ -187,8 +207,15 @@ class Lavalink:
     # REST API METHODS
 
     async def request(
-        self, method: str, path: str, params: dict = {}, data: dict | list | None = None
+        self,
+        method: str,
+        path: str,
+        *,
+        params: types.PayloadType | None = None,
+        data: types.PayloadType | list[str] | None = None,
     ) -> typing.Any:
+        if not params:
+            params = {}
         params["trace"] = "true"
 
         async with self.session.request(
@@ -238,7 +265,7 @@ class Lavalink:
         voice: models.VoiceState | None = None,
     ) -> models.Player:
         query = f"v3/sessions/{self.session_id}/players/{guild_id}"
-        params = {"noReplace": "true"} if no_replace else {}
+        params: types.PayloadType = {"noReplace": "true"} if no_replace else {}
 
         if voice:
             voice_dict = voice.to_payload()
@@ -260,7 +287,7 @@ class Lavalink:
         data = utils.remove_null_values(**data)
 
         return models.Player.from_payload(
-            await self.request("PATCH", query, params, data)
+            await self.request("PATCH", query, params=params, data=data)
         )
 
     async def destroy_player(self, guild_id: int) -> None:
@@ -277,14 +304,18 @@ class Lavalink:
             "PATCH",
             f"v3/sessions/{self.session_id}",
             data=utils.remove_null_values(
-                resumingKey=resuming_key,
-                timeout=timeout,
+                **{
+                    "resumingKey": resuming_key,
+                    "timeout": timeout,
+                }
             ),
         )
 
     async def load_track(self, identifier: str) -> models.LoadTrackResult:
         return models.LoadTrackResult.from_payload(
-            await self.request("GET", "v3/loadtracks", {"identifier": identifier})
+            await self.request(
+                "GET", "v3/loadtracks", params={"identifier": identifier}
+            )
         )
 
     async def decode_track(self, encoded: str) -> models.Track:
@@ -292,7 +323,7 @@ class Lavalink:
             await self.request(
                 "GET",
                 "v3/decodetrack",
-                {
+                params={
                     "encodedTrack": encoded,
                 },
             )

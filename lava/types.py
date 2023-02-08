@@ -1,10 +1,10 @@
 import typing
 
-
-AtomicTypes = None | str | int | float | bool
+AtomicTypes = str | int | float | bool | None
 
 PayloadType = dict[
-    str, AtomicTypes | list[AtomicTypes] | "PayloadType" | list["PayloadType"]
+    str,
+    typing.Union[AtomicTypes, list[AtomicTypes], "PayloadType", list["PayloadType"]],
 ]
 
 
