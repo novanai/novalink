@@ -15,7 +15,7 @@ class Event(models.BaseLavalinkModel, abc.ABC):
     ...
 
 
-EventT = typing.TypeVar("EventT", bound=Event)
+EventT = typing.TypeVar("EventT", bound=Event, contravariant=True)
 
 EventsCallbackT = typing.Callable[[EventT], typing.Awaitable[typing.Any]]
 

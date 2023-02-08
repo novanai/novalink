@@ -676,7 +676,7 @@ class LoadTrackResult(BaseLavalinkModel):
         exception = data.get("exception")
 
         assert (
-            isinstance(load_type, dict)
+            isinstance(load_type, str)
             and isinstance(playlist_info, dict)
             and isinstance(tracks, list)
             and is_payload_list(tracks)

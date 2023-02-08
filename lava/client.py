@@ -26,12 +26,12 @@ class Lavalink:
         self.queues: dict[int, list[models.Track]] = {}
 
         self._session: aiohttp.ClientSession | None = None
-        self._websocket: aiohttp.client._WSRequestContextManager | None = (  # pyright: ignore[reportPrivateUsage]
+        self._websocket: aiohttp.ClientWebSocketResponse | None = (
             None
         )
 
         self.event_listeners: dict[
-            typing.Type[events.Event], list[events.EventsCallbackT[events.Event]]
+            type[events.Event], list[events.EventsCallbackT[events.Event]]
         ] = {}
 
     @property
@@ -86,7 +86,7 @@ class Lavalink:
     @property
     def websocket(
         self,
-    ) -> aiohttp.client._WSRequestContextManager:  # pyright: ignore[reportPrivateUsage]
+    ) -> aiohttp.ClientWebSocketResponse:
         if not self._websocket:
             raise RuntimeError("websocket Lavalink.connect() was not called.")
 
@@ -94,7 +94,7 @@ class Lavalink:
 
     async def close(self) -> None:
         await self.session.close()
-        self.websocket.close()
+        await self.websocket.close()
 
     async def connect(
         self,
@@ -119,48 +119,56 @@ class Lavalink:
             headers["Resume-Key"] = resume_key
 
         self._session = aiohttp.ClientSession(headers=headers)
-        self._websocket = (
-            self._session.ws_connect(  # pyright: ignore[reportUnknownMemberType]
-                f"{'wss' if is_ssl else 'ws'}://{host}:{port}/v3/websocket"
-            )
-        )
+        self._websocket = await self._connect_websocket()
 
         asyncio.create_task(self._start_listening())
 
+    async def _connect_websocket(self) -> aiohttp.ClientWebSocketResponse:
+        return await self.session.ws_connect(  # pyright: ignore[reportUnknownMemberType]
+            f"{'wss' if self.is_ssl else 'ws'}://{self.host}:{self.port}/v3/websocket"
+        )
+
     async def _start_listening(self) -> None:
-        async with self.websocket as ws:
-            async for msg in ws:
-                assert isinstance(
-                    msg.data, str
-                )  # pyright: ignore[reportUnknownMemberType]
-                data: types.PayloadType = json.loads(
-                    msg.data
-                )  # pyright: ignore[reportUnknownMemberType]
+        while True:
+            msg = await self.websocket.receive()
 
-                if data["op"] == "ready":
-                    session_id = data["sessionId"]
-                    assert isinstance(session_id, str)
-                    self._session_id = session_id
+            if msg.type == aiohttp.WSMsgType.CLOSED: # pyright: ignore[reportUnknownMemberType]
+                print("Received websocket closed event, reconnecting in 10 seconds...")
+                await asyncio.sleep(10)
+                self._websocket = await self._connect_websocket()
 
-                    self.dispatch(events.ReadyEvent, data)
+            elif msg.type != aiohttp.WSMsgType.TEXT: # pyright: ignore[reportUnknownMemberType]
+                return
 
-                elif data["op"] == "playerUpdate":
-                    self.dispatch(events.PlayerUpdateEvent, data)
+            asyncio.create_task(self._handle_payload(msg.data))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
 
-                elif data["op"] == "stats":
-                    self.dispatch(events.StatsEvent, data)
+    async def _handle_payload(self, data_str: str) -> None: 
+        data: types.PayloadType = json.loads(data_str)  
 
-                elif data["op"] == "event":
-                    if data["type"] == "TrackStartEvent":
-                        self.dispatch(events.TrackStartEvent, data)
-                    elif data["type"] == "TrackEndEvent":
-                        self.dispatch(events.TrackEndEvent, data)
-                    elif data["type"] == "TrackExceptionEvent":
-                        self.dispatch(events.TrackExceptionEvent, data)
-                    elif data["type"] == "TrackStuckEvent":
-                        self.dispatch(events.TrackStuckEvent, data)
-                    elif data["type"] == "WebSocketClosedEvent":
-                        self.dispatch(events.WebSocketClosedEvent, data)
+        if data["op"] == "ready":
+            session_id = data["sessionId"]
+            assert isinstance(session_id, str)
+            self._session_id = session_id
+
+            self.dispatch(events.ReadyEvent, data)
+
+        elif data["op"] == "playerUpdate":
+            self.dispatch(events.PlayerUpdateEvent, data)
+
+        elif data["op"] == "stats":
+            self.dispatch(events.StatsEvent, data)
+
+        elif data["op"] == "event":
+            if data["type"] == "TrackStartEvent":
+                self.dispatch(events.TrackStartEvent, data)
+            elif data["type"] == "TrackEndEvent":
+                self.dispatch(events.TrackEndEvent, data)
+            elif data["type"] == "TrackExceptionEvent":
+                self.dispatch(events.TrackExceptionEvent, data)
+            elif data["type"] == "TrackStuckEvent":
+                self.dispatch(events.TrackStuckEvent, data)
+            elif data["type"] == "WebSocketClosedEvent":
+                self.dispatch(events.WebSocketClosedEvent, data)
 
     def dispatch(self, event_type: type[events.Event], data: types.PayloadType) -> None:
         if listeners := self.event_listeners.get(event_type):
@@ -169,10 +177,10 @@ class Lavalink:
                 asyncio.create_task(listener(event))  # Remaining typing error
 
     def listen(
-        self, event_type: typing.Type[events.EventT]
-    ) -> typing.Callable[[events.EventsCallbackT[events.Event]], None]:
+        self, event_type: type[events.EventT]
+    ) -> typing.Callable[[events.EventsCallbackT[events.EventT]], None]:
         def decorator(
-            callback: events.EventsCallbackT[events.Event],
+            callback: events.EventsCallbackT[events.EventT],
         ) -> None:
             if event_type in self.event_listeners:
                 self.event_listeners[event_type].append(callback)
@@ -184,11 +192,12 @@ class Lavalink:
     def handle_voice_server_update(
         self, guild_id: int, endpoint: str | None, token: str
     ) -> None:
-        # TODO: Handle endpoint = None disconnect
+        # TODO: Handle endpoint = None disconnect, but how?
         if self.voice_states.get(guild_id):
             if endpoint:
                 self.voice_states[guild_id].endpoint = endpoint.replace("wss://", "")
             self.voice_states[guild_id].token = token
+            # discord should send a new endpoint later
 
     def handle_voice_state_update(
         self, guild_id: int, user_id: int, session_id: str
