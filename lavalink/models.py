@@ -8,7 +8,7 @@ import typing
 import attr
 import typing_extensions
 
-import lava.types as types
+import lavalink.types as types
 
 
 class BaseLavalinkModel(abc.ABC):
@@ -332,8 +332,8 @@ class VoiceState(BaseLavalinkModel):
     token: str
     endpoint: str
     session_id: str
-    connected: bool | None
-    ping: int | None
+    connected: bool | None = None
+    ping: int | None = None
 
     @classmethod
     def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
@@ -371,16 +371,16 @@ class VoiceState(BaseLavalinkModel):
 
 @attr.define()
 class Filters(BaseLavalinkModel):
-    volume: float | None
-    equalizers: tuple[Equalizer] | None
-    karaoke: Karaoke | None
-    timescale: Timescale | None
-    tremolo: Tremolo | None
-    vibrato: Vibrato | None
-    rotation: Rotation | None
-    distortion: Distortion | None
-    channel_mix: ChannelMix | None
-    low_pass: LowPass | None
+    volume: float | None = None
+    equalizers: tuple[Equalizer] | None = None
+    karaoke: Karaoke | None = None
+    timescale: Timescale | None = None
+    tremolo: Tremolo | None = None
+    vibrato: Vibrato | None = None
+    rotation: Rotation | None = None
+    distortion: Distortion | None = None
+    channel_mix: ChannelMix | None = None
+    low_pass: LowPass | None = None
 
     @classmethod
     def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:

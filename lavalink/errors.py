@@ -5,7 +5,7 @@ import datetime
 import attr
 import typing_extensions
 
-import lava.types as types, lava.models as models
+import lavalink.types as types, lavalink.models as models
 
 
 @attr.define()

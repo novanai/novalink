@@ -7,7 +7,7 @@ import typing
 
 import aiohttp
 
-import lava.types as types, lava.errors as errors, lava.events as events, lava.models as models, lava.utils as utils
+import lavalink.types as types, lavalink.errors as errors, lavalink.events as events, lavalink.models as models, lavalink.utils as utils
 
 
 log = logging.getLogger(__name__)

@@ -7,8 +7,7 @@ import typing
 import attr
 import typing_extensions
 
-import lava.models as models
-import lava.types as types
+import lavalink.models as models, lavalink.types as types
 
 
 class Event(models.BaseLavalinkModel, abc.ABC):

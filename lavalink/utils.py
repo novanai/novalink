@@ -1,4 +1,4 @@
-import lava.types as types
+import lavalink.types as types
 
 
 def remove_null_values(
