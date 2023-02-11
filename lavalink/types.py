@@ -1,11 +1,28 @@
 import typing
 
-AtomicTypes = str | int | float | bool | None
 
-PayloadType = dict[
-    str,
-    typing.Union[AtomicTypes, list[AtomicTypes], "PayloadType", list["PayloadType"]],
-]
+_T = typing.TypeVar("_T")
+MaybeSequence = _T | typing.Sequence[_T]
+AwaitableNull = typing.Coroutine[typing.Any, typing.Any, None]
+
+AtomicTypes = str | int | float | bool
+NullableAtomicTypes = AtomicTypes | None
+
+PayloadValueTypes = MaybeSequence[AtomicTypes] | MaybeSequence["PayloadType"]
+NullablePayloadValueTypes = (
+    MaybeSequence[NullableAtomicTypes] | MaybeSequence["NullablePayloadType"]
+)
+PartiallyNullablePayloadValueTypes = (
+    AtomicTypes
+    | typing.Sequence[NullableAtomicTypes]
+    | MaybeSequence["NullablePayloadType"]
+)
+
+PayloadType = typing.Mapping[str, PayloadValueTypes]
+NullablePayloadType = typing.Mapping[str, NullablePayloadValueTypes]
+PartiallyNullablePayloadType = typing.Mapping[str, PartiallyNullablePayloadValueTypes]
+MutablePayloadType = typing.MutableMapping[str, PayloadValueTypes]
+MutableNullablePayloadType = typing.MutableMapping[str, NullablePayloadValueTypes]
 
 
 def is_payload_list(

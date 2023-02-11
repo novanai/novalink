@@ -7,8 +7,7 @@ import typing
 import attr
 import typing_extensions
 
-from . import models
-from .types import PayloadType
+import lavalink.models as models, lavalink.types as types
 
 
 class Event(models.BaseLavalinkModel, abc.ABC):
@@ -17,7 +16,7 @@ class Event(models.BaseLavalinkModel, abc.ABC):
 
 EventT = typing.TypeVar("EventT", bound=Event, contravariant=True)
 
-EventsCallbackT = typing.Callable[[EventT], typing.Awaitable[typing.Any]]
+EventsCallbackT = typing.Callable[[EventT], types.AwaitableNull]
 
 
 @attr.define()
@@ -26,7 +25,7 @@ class ReadyEvent(Event):
     session_id: str
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         resumed = data["resumed"]
         session_id = data["sessionId"]
 
@@ -40,7 +39,7 @@ class PlayerUpdateEvent(Event):
     state: models.PlayerState
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         guild_id = data["guildId"]
         state = data["state"]
 
@@ -61,7 +60,7 @@ class TrackStartEvent(Event):
     encoded_track: str
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         guild_id = data["guildId"]
         encoded_track = data["encodedTrack"]
 
@@ -81,7 +80,7 @@ class TrackEndEvent(Event):
     reason: models.TrackEndReason
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         guild_id = data["guildId"]
         encoded_track = data["encodedTrack"]
         reason = data["reason"]
@@ -107,7 +106,7 @@ class TrackExceptionEvent(Event):
     exception: models.TrackException
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         guild_id = data["guildId"]
         encoded_track = data["encodedTrack"]
         exception = data["exception"]
@@ -133,7 +132,7 @@ class TrackStuckEvent(Event):
     threshold: datetime.timedelta
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         guild_id = data["guildId"]
         encoded_track = data["encodedTrack"]
         threshold_ms = data["thresholdMs"]
@@ -160,7 +159,7 @@ class WebSocketClosedEvent(Event):
     by_remote: bool
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         guild_id = data["guildId"]
         code = data["code"]
         reason = data["reason"]
