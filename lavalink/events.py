@@ -20,9 +20,6 @@ EventT = typing.TypeVar("EventT", bound=Event, contravariant=True)
 EventsCallbackT = typing.Callable[[EventT], typing.Awaitable[typing.Any]]
 
 
-# TODO: add .lavalink -> Lavalink property to each Event
-
-
 @attr.define()
 class ReadyEvent(Event):
     resumed: bool
