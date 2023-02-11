@@ -11,104 +11,77 @@ from . import errors, events, models, types, utils
 
 log = logging.getLogger(__name__)
 
-
 class Lavalink:
-    def __init__(self) -> None:
-        self._is_ssl: bool | None = None
-        self._host: str | None = None
-        self._port: int | str | None = None
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        is_secure: bool = False,
+        heartbeat: int = 30,  # or less?
+    ) -> None:
+        self.host = host
+        self.port = port
+        self.is_secure = is_secure
+        self.heartbeat = heartbeat
+
+        self._password: str | None = None
         self._bot_id: int | None = None
+        self.resume_key: str | None = None
+        self.shutdown: bool = False
 
         self._session_id: str | None = None
-        self._resume_key: str | None = None
+        self._session: aiohttp.ClientSession | None = None
+        self._websocket: aiohttp.ClientWebSocketResponse | None = None
 
         self.voice_states: dict[int, models.VoiceState] = {}
-        self.queues: dict[int, list[models.Track]] = {}
-
-        self._session: aiohttp.ClientSession | None = None
-        self._websocket: aiohttp.ClientWebSocketResponse | None = (
-            None
-        )
-
         self.event_listeners: dict[
             type[events.Event], list[events.EventsCallbackT[events.Event]]
         ] = {}
 
     @property
-    def is_ssl(self) -> bool:
-        if self._is_ssl is None:
-            raise RuntimeError("is_ssl Lavalink.connect() was not called.")
+    def password(self) -> str:
+        if self._password is None:
+            raise RuntimeError("password is None, Lavalink.connect() was never called.")
 
-        return self._is_ssl
-
-    @property
-    def host(self) -> str:
-        if self._host is None:
-            raise RuntimeError("host Lavalink.connect() was not called.")
-
-        return self._host
+        return self._password
 
     @property
-    def port(self) -> int | str:
-        if self._port is None:
-            raise RuntimeError("port Lavalink.connect() was not called.")
-
-        return self._port
-
-    @property
-    def bot_id(self) -> int | str:
-        if self._bot_id is None:
-            raise RuntimeError("bot_id Lavalink.connect() was not called.")
+    def bot_id(self) -> int:
+        if not self._bot_id:
+            raise RuntimeError("bot_id is None, Lavalink.connect() was never called")
 
         return self._bot_id
 
     @property
     def session_id(self) -> str:
         if self._session_id is None:
-            raise RuntimeError("session_id Lavalink.connect() was not called.")
+            raise RuntimeError("session_id is None, Lavalink.connect() was never called.")
 
         return self._session_id
 
     @property
-    def resume_key(self) -> str:
-        if self._resume_key is None:
-            raise RuntimeError("resume_key Lavalink.connect() was not called.")
-
-        return self._resume_key
-
-    @property
     def session(self) -> aiohttp.ClientSession:
         if not self._session:
-            raise RuntimeError("session Lavalink.connect() was not called.")
+            raise RuntimeError("session is None, Lavalink.connect() was never called")
 
         return self._session
 
     @property
-    def websocket(
-        self,
-    ) -> aiohttp.ClientWebSocketResponse:
+    def websocket(self) -> aiohttp.ClientWebSocketResponse:
         if not self._websocket:
-            raise RuntimeError("websocket Lavalink.connect() was not called.")
+            raise RuntimeError("Not connected to websocket")
 
         return self._websocket
 
-    async def close(self) -> None:
-        await self.session.close()
-        await self.websocket.close()
-
-    async def connect(
-        self,
-        host: str,
-        port: int | str,
+    async def start(
+        self, 
         password: str,
         bot_id: int,
         resume_key: str | None = None,
-        is_ssl: bool = False,
     ) -> None:
-        self._is_ssl = is_ssl
-        self._host = host
-        self._port = port
+        self._password = password
         self._bot_id = bot_id
+        self._resume_key = resume_key
 
         headers = {
             "Authorization": password,
@@ -117,30 +90,43 @@ class Lavalink:
         }
         if resume_key:
             headers["Resume-Key"] = resume_key
-
-        self._session = aiohttp.ClientSession(headers=headers)
-        self._websocket = await self._connect_websocket()
-
-        asyncio.create_task(self._start_listening())
-
-    async def _connect_websocket(self) -> aiohttp.ClientWebSocketResponse:
-        return await self.session.ws_connect(  # pyright: ignore[reportUnknownMemberType]
-            f"{'wss' if self.is_ssl else 'ws'}://{self.host}:{self.port}/v3/websocket"
+        
+        self._session = aiohttp.ClientSession(
+            headers=headers,
         )
 
-    async def _start_listening(self) -> None:
-        while True:
+        await self._connect()
+        asyncio.create_task(self.receive())
+
+    async def _connect(self) -> None:
+        while not self._websocket:
+            try:
+                self._websocket = await self.session.ws_connect(  # pyright: ignore[reportUnknownMemberType]
+                    f"{'wss' if self.is_secure else 'ws'}://{self.host}:{self.port}/v3/websocket",
+                    heartbeat=self.heartbeat,
+                )
+            except (aiohttp.ClientConnectorError, aiohttp.WSServerHandshakeError) as e:
+                log.error(f"Couldn't connect to websocket, retrying in 5 seconds ({e})")
+
+            await asyncio.sleep(5)
+
+        log.info("Connected to websocket")
+
+    async def stop(self) -> None:
+        self.shutdown = True
+        await self.session.close()
+        await self.websocket.close()
+
+    async def receive(self) -> None:
+        while not self.shutdown:
             msg = await self.websocket.receive()
+            if msg.type == aiohttp.WSMsgType.CLOSED:  # pyright: ignore[reportUnknownMemberType]  
+                log.error("websocket closed, reconnecting...")
+                self._websocket = None
+                await self._connect()
 
-            if msg.type == aiohttp.WSMsgType.CLOSED: # pyright: ignore[reportUnknownMemberType]
-                print("Received websocket closed event, reconnecting in 10 seconds...")
-                await asyncio.sleep(10)
-                self._websocket = await self._connect_websocket()
-
-            elif msg.type != aiohttp.WSMsgType.TEXT: # pyright: ignore[reportUnknownMemberType]
-                return
-
-            asyncio.create_task(self._handle_payload(msg.data))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+            elif msg.type == aiohttp.WSMsgType.TEXT:  # pyright: ignore[reportUnknownMemberType]
+                asyncio.create_task(self._handle_payload(msg.data))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
 
     async def _handle_payload(self, data_str: str) -> None: 
         data: types.PayloadType = json.loads(data_str)  
@@ -149,6 +135,9 @@ class Lavalink:
             session_id = data["sessionId"]
             assert isinstance(session_id, str)
             self._session_id = session_id
+
+            if self.resume_key:
+                await self.update_session(self.resume_key)
 
             self.dispatch(events.ReadyEvent, data)
 
@@ -229,7 +218,7 @@ class Lavalink:
 
         async with self.session.request(
             method,
-            f"{'https' if self.is_ssl else 'http'}://{self.host}:{self.port}/{path}",
+            f"{'https' if self.is_secure else 'http'}://{self.host}:{self.port}/{path}",
             params=params,
             json=data,
         ) as res:
