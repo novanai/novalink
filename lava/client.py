@@ -33,6 +33,7 @@ class Lavalink:
         self._session: aiohttp.ClientSession | None = None
         self._websocket: aiohttp.ClientWebSocketResponse | None = None
 
+
         self.voice_states: dict[int, models.VoiceState] = {}
         self.event_listeners: dict[
             type[events.Event], list[events.EventsCallbackT[events.Event]]
@@ -68,6 +69,7 @@ class Lavalink:
 
     @property
     def websocket(self) -> aiohttp.ClientWebSocketResponse:
+
         if not self._websocket:
             raise RuntimeError("Not connected to websocket")
 
