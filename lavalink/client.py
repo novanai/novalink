@@ -299,7 +299,6 @@ class Lavalink:
     async def update_session(
         self, resuming_key: str | None = None, timeout: int | None = None
     ) -> None:
-        # TODO: Add return value?
         await self.request(
             "PATCH",
             f"v3/sessions/{self.session_id}",
