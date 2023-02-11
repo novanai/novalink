@@ -5,12 +5,11 @@ import datetime
 import attr
 import typing_extensions
 
-from .models import BaseLavalinkModel
-from .types import PayloadType
+import lava.types as types, lava.models as models
 
 
 @attr.define()
-class LavalinkError(BaseLavalinkModel, Exception):
+class LavalinkError(models.BaseLavalinkModel, Exception):
     timestamp: datetime.datetime
     status: int
     error: str
@@ -22,7 +21,7 @@ class LavalinkError(BaseLavalinkModel, Exception):
         return f"{self.status} {self.error} for '{self.path}'. Message: {self.message}"
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         timestamp = data["timestamp"]
         status = data["status"]
         error = data["error"]

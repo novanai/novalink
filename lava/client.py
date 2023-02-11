@@ -7,9 +7,11 @@ import typing
 
 import aiohttp
 
-from . import errors, events, models, types, utils
+import lava.types as types, lava.errors as errors, lava.events as events, lava.models as models, lava.utils as utils
+
 
 log = logging.getLogger(__name__)
+
 
 class Lavalink:
     def __init__(
@@ -33,7 +35,6 @@ class Lavalink:
         self._session: aiohttp.ClientSession | None = None
         self._websocket: aiohttp.ClientWebSocketResponse | None = None
 
-
         self.voice_states: dict[int, models.VoiceState] = {}
         self.event_listeners: dict[
             type[events.Event], list[events.EventsCallbackT[events.Event]]
@@ -56,7 +57,9 @@ class Lavalink:
     @property
     def session_id(self) -> str:
         if self._session_id is None:
-            raise RuntimeError("session_id is None, Lavalink.connect() was never called.")
+            raise RuntimeError(
+                "session_id is None, Lavalink.connect() was never called."
+            )
 
         return self._session_id
 
@@ -76,7 +79,7 @@ class Lavalink:
         return self._websocket
 
     async def start(
-        self, 
+        self,
         password: str,
         bot_id: int,
         resume_key: str | None = None,
@@ -92,7 +95,7 @@ class Lavalink:
         }
         if resume_key:
             headers["Resume-Key"] = resume_key
-        
+
         self._session = aiohttp.ClientSession(
             headers=headers,
         )
@@ -122,16 +125,26 @@ class Lavalink:
     async def receive(self) -> None:
         while not self.shutdown:
             msg = await self.websocket.receive()
-            if msg.type == aiohttp.WSMsgType.CLOSED:  # pyright: ignore[reportUnknownMemberType]  
+            if (
+                msg.type  # pyright: ignore[reportUnknownMemberType]
+                == aiohttp.WSMsgType.CLOSED
+            ):
                 log.error("websocket closed, reconnecting...")
                 self._websocket = None
                 await self._connect()
 
-            elif msg.type == aiohttp.WSMsgType.TEXT:  # pyright: ignore[reportUnknownMemberType]
-                asyncio.create_task(self._handle_payload(msg.data))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+            elif (
+                msg.type  # pyright: ignore[reportUnknownMemberType]
+                == aiohttp.WSMsgType.TEXT
+            ):
+                asyncio.create_task(
+                    self._handle_payload(
+                        msg.data  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+                    )
+                )
 
-    async def _handle_payload(self, data_str: str) -> None: 
-        data: types.PayloadType = json.loads(data_str)  
+    async def _handle_payload(self, data_str: str) -> None:
+        data: types.PayloadType = json.loads(data_str)
 
         if data["op"] == "ready":
             session_id = data["sessionId"]
@@ -165,13 +178,13 @@ class Lavalink:
         if listeners := self.event_listeners.get(event_type):
             event = event_type.from_payload(data)
             for listener in listeners:
-                asyncio.create_task(listener(event))  # Remaining typing error
+                asyncio.create_task(listener(event))
 
     def listen(
-        self, event_type: type[events.EventT]
-    ) -> typing.Callable[[events.EventsCallbackT[events.EventT]], None]:
+        self, event_type: type[typing.Any]
+    ) -> typing.Callable[[events.EventsCallbackT[typing.Any]], None]:
         def decorator(
-            callback: events.EventsCallbackT[events.EventT],
+            callback: events.EventsCallbackT[typing.Any],
         ) -> None:
             if event_type in self.event_listeners:
                 self.event_listeners[event_type].append(callback)
@@ -211,8 +224,8 @@ class Lavalink:
         method: str,
         path: str,
         *,
-        params: types.PayloadType | None = None,
-        data: types.PayloadType | list[str] | None = None,
+        params: types.MutablePayloadType | None = None,
+        data: types.PartiallyNullablePayloadType | list[str] | None = None,
     ) -> typing.Any:
         if not params:
             params = {}
@@ -265,10 +278,12 @@ class Lavalink:
         voice: models.VoiceState | None = None,
     ) -> models.Player:
         query = f"v3/sessions/{self.session_id}/players/{guild_id}"
-        params: types.PayloadType = {"noReplace": "true"} if no_replace else {}
+        params: types.MutablePayloadType = {"noReplace": "true"} if no_replace else {}
 
         if voice:
-            voice_dict = voice.to_payload()
+            voice_dict = typing.cast(
+                types.MutableNullablePayloadType, voice.to_payload()
+            )
             voice_dict.pop("connected")
             voice_dict.pop("ping")
         else:
@@ -284,7 +299,7 @@ class Lavalink:
             "filters": filters.to_payload() if filters else None,
             "voice": voice_dict,
         }
-        data = utils.remove_null_values(**data)
+        data = utils.remove_null_values(data)
 
         return models.Player.from_payload(
             await self.request("PATCH", query, params=params, data=data)
@@ -304,7 +319,7 @@ class Lavalink:
             "PATCH",
             f"v3/sessions/{self.session_id}",
             data=utils.remove_null_values(
-                **{
+                {
                     "resumingKey": resuming_key,
                     "timeout": timeout,
                 }

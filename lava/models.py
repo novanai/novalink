@@ -8,25 +8,24 @@ import typing
 import attr
 import typing_extensions
 
-from .types import (PayloadType, is_payload_list, is_payload_list_nullable,
-                    is_str_list)
+import lava.types as types
 
 
 class BaseLavalinkModel(abc.ABC):
     @classmethod
     @abc.abstractmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         ...
 
     @classmethod
     def from_payloads(
-        cls, data: typing.Iterable[PayloadType]
+        cls, data: typing.Iterable[types.PayloadType]
     ) -> tuple[typing_extensions.Self]:
         return tuple(cls.from_payload(d) for d in data)
 
     @typing.overload
     @classmethod
-    def from_payload_nullable(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload_nullable(cls, data: types.PayloadType) -> typing_extensions.Self:
         ...
 
     @typing.overload
@@ -36,14 +35,14 @@ class BaseLavalinkModel(abc.ABC):
 
     @classmethod
     def from_payload_nullable(
-        cls, data: PayloadType | None
+        cls, data: types.PayloadType | None
     ) -> typing_extensions.Self | None:
         return cls.from_payload(data) if data is not None else None
 
     @typing.overload
     @classmethod
     def from_payloads_nullable(
-        cls, data: typing.Iterable[PayloadType]
+        cls, data: typing.Iterable[types.PayloadType]
     ) -> tuple[typing_extensions.Self]:
         ...
 
@@ -54,7 +53,7 @@ class BaseLavalinkModel(abc.ABC):
 
     @classmethod
     def from_payloads_nullable(
-        cls, data: typing.Iterable[PayloadType] | None
+        cls, data: typing.Iterable[types.PayloadType] | None
     ) -> tuple[typing_extensions.Self] | None:
         return tuple(cls.from_payload(d) for d in data) if data is not None else None
 
@@ -67,7 +66,7 @@ class PlayerState(BaseLavalinkModel):
     ping: datetime.timedelta | None
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         time = data["time"]
         position = data.get("position")
         connected = data["connected"]
@@ -98,7 +97,7 @@ class Stats(BaseLavalinkModel):
     frame_stats: FrameStats | None
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         players = data["players"]
         playing_players = data["playingPlayers"]
         uptime = data["uptime"]
@@ -133,7 +132,7 @@ class Memory:
     reservable: int
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         free = data["free"]
         used = data["used"]
         allocated = data["allocated"]
@@ -156,7 +155,7 @@ class CPU(BaseLavalinkModel):
     lavalink_load: float
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         cores = data["cores"]
         system_load = data["systemLoad"]
         lavalink_load = data["lavalinkLoad"]
@@ -177,7 +176,7 @@ class FrameStats(BaseLavalinkModel):
     deficit: int
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         sent = data["sent"]
         nulled = data["nulled"]
         deficit = data["deficit"]
@@ -212,7 +211,7 @@ class TrackException(BaseLavalinkModel):
     cause: str
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         message = data["message"]
         severity = data["severity"]
         cause = data["cause"]
@@ -236,7 +235,7 @@ class Player(BaseLavalinkModel):
     filters: Filters
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         guild_id = data["guildId"]
         track = data["track"]
         volume = data["volume"]
@@ -270,7 +269,7 @@ class Track(BaseLavalinkModel):
     info: TrackInfo
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         encoded = data["encoded"]
         info = data["info"]
 
@@ -292,7 +291,7 @@ class TrackInfo(BaseLavalinkModel):
     source_name: str
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         identifier = data["identifier"]
         is_seekable = data["isSeekable"]
         author = data["author"]
@@ -337,7 +336,7 @@ class VoiceState(BaseLavalinkModel):
     ping: int | None
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         token = data["token"]
         endpoint = data["endpoint"]
         session_id = data["sessionId"]
@@ -360,7 +359,7 @@ class VoiceState(BaseLavalinkModel):
             ping,
         )
 
-    def to_payload(self) -> PayloadType:
+    def to_payload(self) -> types.NullablePayloadType:
         return {
             "token": self.token,
             "endpoint": self.endpoint,
@@ -384,7 +383,7 @@ class Filters(BaseLavalinkModel):
     low_pass: LowPass | None
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         volume = data.get("volume")
         equalizers = data.get("equalizers")
         karaoke = data.get("karaoke")
@@ -399,7 +398,7 @@ class Filters(BaseLavalinkModel):
         assert (
             isinstance(volume, float | None)
             and isinstance(equalizers, list | None)
-            and is_payload_list_nullable(equalizers)
+            and types.is_payload_list_nullable(equalizers)
             and isinstance(karaoke, dict | None)
             and isinstance(timescale, dict | None)
             and isinstance(tremolo, dict | None)
@@ -423,7 +422,7 @@ class Filters(BaseLavalinkModel):
             LowPass.from_payload_nullable(low_pass),
         )
 
-    def to_payload(self) -> PayloadType:
+    def to_payload(self) -> types.NullablePayloadType:
         return {
             "volume": self.volume,
             "equalizer": [attr.asdict(e) for e in self.equalizers]
@@ -446,7 +445,7 @@ class Equalizer(BaseLavalinkModel):
     gain: float
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         band = data["band"]
         gain = data["gain"]
 
@@ -463,7 +462,7 @@ class Karaoke(BaseLavalinkModel):
     filter_width: float | None
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         level = data.get("level")
         mono_level = data.get("monoLevel")
         filter_band = data.get("filterBand")
@@ -478,7 +477,7 @@ class Karaoke(BaseLavalinkModel):
 
         return cls(level, mono_level, filter_band, filter_width)
 
-    def to_payload(self) -> PayloadType:
+    def to_payload(self) -> types.NullablePayloadType:
         return {
             "level": self.level,
             "monoLevel": self.mono_level,
@@ -494,7 +493,7 @@ class Timescale(BaseLavalinkModel):
     rate: float | None
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         speed = data.get("speed")
         pitch = data.get("pitch")
         rate = data.get("rate")
@@ -514,7 +513,7 @@ class Tremolo(BaseLavalinkModel):
     depth: float | None
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         frequency = data.get("frequency")
         depth = data.get("depth")
 
@@ -529,7 +528,7 @@ class Vibrato(BaseLavalinkModel):
     depth: float | None
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         frequency = data.get("frequency")
         depth = data.get("depth")
 
@@ -543,14 +542,14 @@ class Rotation(BaseLavalinkModel):
     rotation_hz: float | None
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         rotation_hz = data.get("rotationHz")
 
         assert isinstance(rotation_hz, float | None)
 
         return cls(rotation_hz)
 
-    def to_payload(self) -> PayloadType:
+    def to_payload(self) -> types.NullablePayloadType:
         return {"rotationHz": self.rotation_hz}
 
 
@@ -566,7 +565,7 @@ class Distortion(BaseLavalinkModel):
     scale: float | None
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         sin_offset = data.get("sinOffset")
         sin_scale = data.get("sinScale")
         cos_offset = data.get("cosOffset")
@@ -598,7 +597,7 @@ class Distortion(BaseLavalinkModel):
             scale,
         )
 
-    def to_payload(self) -> PayloadType:
+    def to_payload(self) -> types.NullablePayloadType:
         return {
             "sinOffset": self.sin_offset,
             "sinScale": self.sin_scale,
@@ -619,7 +618,7 @@ class ChannelMix(BaseLavalinkModel):
     right_to_right: float | None
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         left_to_left = data.get("leftToLeft")
         left_to_right = data.get("leftToRight")
         right_to_left = data.get("rightToLeft")
@@ -639,7 +638,7 @@ class ChannelMix(BaseLavalinkModel):
             right_to_right,
         )
 
-    def to_payload(self) -> PayloadType:
+    def to_payload(self) -> types.NullablePayloadType:
         return {
             "leftToLeft": self.left_to_left,
             "leftToRight": self.left_to_right,
@@ -653,7 +652,7 @@ class LowPass(BaseLavalinkModel):
     smoothing: float | None
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         smoothing = data.get("smoothing")
 
         assert isinstance(smoothing, float | None)
@@ -669,7 +668,7 @@ class LoadTrackResult(BaseLavalinkModel):
     exception: TrackException | None
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         load_type = data["loadType"]
         playlist_info = data["playlistInfo"]
         tracks = data["tracks"]
@@ -679,7 +678,7 @@ class LoadTrackResult(BaseLavalinkModel):
             isinstance(load_type, str)
             and isinstance(playlist_info, dict)
             and isinstance(tracks, list)
-            and is_payload_list(tracks)
+            and types.is_payload_list(tracks)
             and isinstance(exception, dict | None)
         )
 
@@ -706,7 +705,7 @@ class PlaylistInfo(BaseLavalinkModel):
     selected_track: int | None
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         name = data.get("name")
         selected_track = data.get("selectedTrack")
 
@@ -727,7 +726,7 @@ class LavalinkInfo(BaseLavalinkModel):
     plugins: tuple[Plugin]
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         version = data["version"]
         build_time = data["buildTime"]
         git = data["git"]
@@ -744,11 +743,11 @@ class LavalinkInfo(BaseLavalinkModel):
             and isinstance(jvm, str)
             and isinstance(lavaplayer, str)
             and isinstance(source_managers, list)
-            and is_str_list(source_managers)
+            and types.is_str_list(source_managers)
             and isinstance(filters, list)
-            and is_str_list(filters)
+            and types.is_str_list(filters)
             and isinstance(plugins, list)
-            and is_payload_list(plugins)
+            and types.is_payload_list(plugins)
         )
 
         return cls(
@@ -772,7 +771,7 @@ class Version(BaseLavalinkModel):
     pre_release: str | None
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         semver = data["semver"]
         major = data["major"]
         minor = data["minor"]
@@ -803,7 +802,7 @@ class Git(BaseLavalinkModel):
     commit_time: datetime.datetime
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         branch = data["branch"]
         commit = data["commit"]
         commit_time = data["commitTime"]
@@ -827,7 +826,7 @@ class Plugin(BaseLavalinkModel):
     version: str
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         name = data["name"]
         version = data["version"]
 
@@ -842,7 +841,7 @@ class RoutePlannerStatus(BaseLavalinkModel):
     details: Details | None
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         type = data["type"]
         details = data["details"]
 
@@ -872,7 +871,7 @@ class Details(BaseLavalinkModel):
     block_index: str
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         ip_block = data["ipBlock"]
         failing_addresses = data["failingAddresses"]
         rotate_index = data["rotateIndex"]
@@ -884,7 +883,7 @@ class Details(BaseLavalinkModel):
         assert (
             isinstance(ip_block, dict)
             and isinstance(failing_addresses, list)
-            and is_payload_list(failing_addresses)
+            and types.is_payload_list(failing_addresses)
             and isinstance(rotate_index, str)
             and isinstance(ip_index, str)
             and isinstance(current_address, str)
@@ -909,7 +908,7 @@ class IPBlock(BaseLavalinkModel):
     size: str
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         type = data["type"]
         size = data["size"]
 
@@ -932,7 +931,7 @@ class FailingAddress(BaseLavalinkModel):
     failing_time: datetime.datetime
 
     @classmethod
-    def from_payload(cls, data: PayloadType) -> typing_extensions.Self:
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         address = data["address"]
         failing_time = data["failingTime"]
 
