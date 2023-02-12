@@ -10,12 +10,19 @@ import lavalink.types as types, lavalink.models as models
 
 @attr.define()
 class LavalinkError(models.BaseLavalinkModel, Exception):
-    timestamp: datetime.datetime
+    """An error returned by the lavalink server."""
+    time: datetime.datetime
+    """The time the error occurred."""
     status: int
+    """The HTTP status code."""
     error: str
+    """The HTTP status code message."""
     trace: str | None
+    """The stack trace of the error."""
     message: str
+    """The error message."""
     path: str
+    """The request path."""
 
     def __str__(self) -> str:
         return f"{self.status} {self.error} for '{self.path}'. Message: {self.message}"
