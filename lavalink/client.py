@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import typing
+import datetime
 
 import aiohttp
 
@@ -14,6 +15,19 @@ log = logging.getLogger(__name__)
 
 
 class Lavalink:
+    """A lavalink client.
+
+    Parameters
+    ----------
+    host : str
+        Host of the lavalink server.
+    port : int
+        Port of the lavalink server.
+    is_secure : bool, default: False
+        Whether the server is secure.
+    heartbeat : int, default: 30
+        How often to ping the lavalink server (in seconds).
+    """
     def __init__(
         self,
         host: str,
@@ -35,44 +49,48 @@ class Lavalink:
         self._session: aiohttp.ClientSession | None = None
         self._websocket: aiohttp.ClientWebSocketResponse | None = None
 
-        self.voice_states: dict[int, models.VoiceState] = {}
-        self.event_listeners: dict[
+        self._voice_states: dict[int, models.VoiceState] = {}
+        self._event_listeners: dict[
             type[events.Event], list[events.EventsCallbackT[events.Event]]
         ] = {}
 
     @property
     def password(self) -> str:
+        """The password of the lavalink server passed to :obj:`~Lavalink.start()`."""
         if self._password is None:
-            raise RuntimeError("password is None, Lavalink.connect() was never called.")
+            raise RuntimeError("password is None, Lavalink.start() was never called.")
 
         return self._password
 
     @property
     def bot_id(self) -> int:
+        """The user ID of the bot passed to :obj:`~Lavalink.start()`."""
         if not self._bot_id:
-            raise RuntimeError("bot_id is None, Lavalink.connect() was never called")
+            raise RuntimeError("bot_id is None, Lavalink.start() was never called")
 
         return self._bot_id
 
     @property
     def session_id(self) -> str:
+        """The lavalink session ID."""
         if self._session_id is None:
             raise RuntimeError(
-                "session_id is None, Lavalink.connect() was never called."
+                "session_id is None, Lavalink.start() was never called."
             )
 
         return self._session_id
 
     @property
     def session(self) -> aiohttp.ClientSession:
+        """A :obj:`~aiohttp.ClientSession` for making requests to the lavalink server."""
         if not self._session:
-            raise RuntimeError("session is None, Lavalink.connect() was never called")
+            raise RuntimeError("session is None, Lavalink.start() was never called")
 
         return self._session
 
     @property
     def websocket(self) -> aiohttp.ClientWebSocketResponse:
-
+        """A websocket connection with the lavalink server."""
         if not self._websocket:
             raise RuntimeError("Not connected to websocket")
 
@@ -84,6 +102,18 @@ class Lavalink:
         bot_id: int,
         resume_key: str | None = None,
     ) -> None:
+        """Connect to the lavalink websocket and start listening for events.
+        
+        Parameters
+        ----------
+        password : str
+            The password of the lavalink server, set in the
+            `lavalink config <https://github.com/freyacodes/Lavalink/blob/master/LavalinkServer/application.yml.example>`_.
+        bot_id : int
+            The user ID of the bot.
+        resume_key : str, optional
+            A resume key, used to resume a session.
+        """
         self._password = password
         self._bot_id = bot_id
         self._resume_key = resume_key
@@ -101,7 +131,13 @@ class Lavalink:
         )
 
         await self._connect()
-        asyncio.create_task(self.receive())
+        asyncio.create_task(self._receive())
+
+    async def stop(self) -> None:
+        """Stop listening for events and close the websocket connection."""
+        self.shutdown = True
+        await self.session.close()
+        await self.websocket.close()
 
     async def _connect(self) -> None:
         while not self._websocket:
@@ -117,12 +153,7 @@ class Lavalink:
 
         log.info("Connected to websocket")
 
-    async def stop(self) -> None:
-        self.shutdown = True
-        await self.session.close()
-        await self.websocket.close()
-
-    async def receive(self) -> None:
+    async def _receive(self) -> None:
         while not self.shutdown:
             msg = await self.websocket.receive()
             if (
@@ -145,8 +176,9 @@ class Lavalink:
 
     async def _handle_payload(self, data_str: str) -> None:
         data: types.PayloadType = json.loads(data_str)
+        op = data["op"]
 
-        if data["op"] == "ready":
+        if op == "ready":
             session_id = data["sessionId"]
             assert isinstance(session_id, str)
             self._session_id = session_id
@@ -156,26 +188,27 @@ class Lavalink:
 
             self.dispatch(events.ReadyEvent, data)
 
-        elif data["op"] == "playerUpdate":
+        elif op == "playerUpdate":
             self.dispatch(events.PlayerUpdateEvent, data)
 
-        elif data["op"] == "stats":
+        elif op == "stats":
             self.dispatch(events.StatsEvent, data)
 
-        elif data["op"] == "event":
-            if data["type"] == "TrackStartEvent":
+        elif op == "event":
+            type = data["type"]
+            if type == "TrackStartEvent":
                 self.dispatch(events.TrackStartEvent, data)
-            elif data["type"] == "TrackEndEvent":
+            elif type == "TrackEndEvent":
                 self.dispatch(events.TrackEndEvent, data)
-            elif data["type"] == "TrackExceptionEvent":
+            elif type == "TrackExceptionEvent":
                 self.dispatch(events.TrackExceptionEvent, data)
-            elif data["type"] == "TrackStuckEvent":
+            elif type == "TrackStuckEvent":
                 self.dispatch(events.TrackStuckEvent, data)
-            elif data["type"] == "WebSocketClosedEvent":
+            elif type == "WebSocketClosedEvent":
                 self.dispatch(events.WebSocketClosedEvent, data)
 
     def dispatch(self, event_type: type[events.Event], data: types.PayloadType) -> None:
-        if listeners := self.event_listeners.get(event_type):
+        if listeners := self._event_listeners.get(event_type):
             event = event_type.from_payload(data)
             for listener in listeners:
                 asyncio.create_task(listener(event))
@@ -183,37 +216,76 @@ class Lavalink:
     def listen(
         self, event_type: type[typing.Any]
     ) -> typing.Callable[[events.EventsCallbackT[typing.Any]], None]:
+        """Listen for an event received from the lavalink server.
+        
+        Parameters
+        ----------
+            event_type : subclass of :obj:`~lavalink.events.Event`
+                The event to listen for.
+
+        Example
+        -------
+        .. code-block:: python
+
+            lava = lavalink.Lavalink(...)
+
+            @lava.listen(lavalink.ReadyEvent)
+            async def on_ready(event: lavalink.ReadyEvent):
+                print(f"Lavalink is ready! Session ID: {event.session_id}")
+        """
         def decorator(
             callback: events.EventsCallbackT[typing.Any],
         ) -> None:
-            if event_type in self.event_listeners:
-                self.event_listeners[event_type].append(callback)
+            if event_type in self._event_listeners:
+                self._event_listeners[event_type].append(callback)
             else:
-                self.event_listeners[event_type] = [callback]
+                self._event_listeners[event_type] = [callback]
 
         return decorator
 
     def handle_voice_server_update(
         self, guild_id: int, endpoint: str | None, token: str
     ) -> None:
-        # TODO: Handle endpoint = None disconnect, but how?
-        if self.voice_states.get(guild_id):
+        """Handle a voice server update event sent by Discord.
+        
+        Parameters
+        ----------
+        guild_id : int
+            The ID of the guild this event happened in.
+        endpoint : str | None
+            The endpoint provided by Discord.
+        token : str
+            The token provided by Discord.
+        """
+        if self._voice_states.get(guild_id):
             if endpoint:
-                self.voice_states[guild_id].endpoint = endpoint.replace("wss://", "")
-            self.voice_states[guild_id].token = token
-            # discord should send a new endpoint later
+                self._voice_states[guild_id].endpoint = endpoint.replace("wss://", "")
+                asyncio.create_task(self.update_player(guild_id, voice=self._voice_states[guild_id]))
+            
+            self._voice_states[guild_id].token = token
 
     def handle_voice_state_update(
         self, guild_id: int, user_id: int, session_id: str
     ) -> None:
+        """Handle a voice state update event sent by Discord.
+        
+        Parameters
+        ----------
+        guild_id : int
+            The ID of the guild this event happened in.
+        user_id : int
+            The ID of the user this event regards.
+        session_id : str
+            The session ID provided by Discord.
+        """
         if user_id != self.bot_id:
             return
 
-        if self.voice_states.get(guild_id):
-            self.voice_states[guild_id].session_id = session_id
+        if self._voice_states.get(guild_id):
+            self._voice_states[guild_id].session_id = session_id
 
         else:
-            self.voice_states[guild_id] = models.VoiceState(
+            self._voice_states[guild_id] = models.VoiceState(
                 "", "", session_id, None, None
             )
 
@@ -221,11 +293,11 @@ class Lavalink:
 
     async def request(
         self,
-        method: str,
+        method: typing.Literal["GET", "POST", "PUT", "PATCH", "DELETE"],
         path: str,
         *,
         params: types.MutablePayloadType | None = None,
-        data: types.PartiallyNullablePayloadType | list[str] | None = None,
+        data: types.PartiallyUndefinablePayloadType | list[str] | None = None,
     ) -> typing.Any:
         if not params:
             params = {}
@@ -252,12 +324,20 @@ class Lavalink:
                 return (await res.read()).decode("utf-8")
 
     async def get_players(self) -> list[models.Player]:
+        """Get a list of players for this session."""
         return [
             models.Player.from_payload(p)
             for p in await self.request("GET", f"v3/sessions/{self.session_id}/players")
         ]
 
     async def get_player(self, guild_id: int) -> models.Player:
+        """Get the player for a specific guild in this session.
+        
+        Parameters
+        ----------
+        guild_id : int
+            The ID of the guild to get a player for.
+        """
         return models.Player.from_payload(
             await self.request(
                 "GET", f"v3/sessions/{self.session_id}/players/{guild_id}"
@@ -267,57 +347,105 @@ class Lavalink:
     async def update_player(
         self,
         guild_id: int,
-        no_replace: bool | None = None,
-        encoded_track: str | None = None,
-        identifier: str | None = None,
-        position: int | None = None,
-        end_time: int | None = None,
-        volume: int | None = None,
-        paused: bool | None = None,
-        filters: models.Filters | None = None,
-        voice: models.VoiceState | None = None,
+        no_replace: types.UndefinedOr[bool] = types.UNDEFINED,
+        encoded_track: types.UndefinedOr[str | None] = types.UNDEFINED,
+        identifier: types.UndefinedOr[str] = types.UNDEFINED,
+        position: types.UndefinedOr[datetime.timedelta] = types.UNDEFINED,
+        end_time: types.UndefinedOr[datetime.timedelta] = types.UNDEFINED,
+        volume: types.UndefinedOr[int] = types.UNDEFINED,
+        paused: types.UndefinedOr[bool] = types.UNDEFINED,
+        filters: types.UndefinedOr[models.Filters] = types.UNDEFINED,
+        voice: types.UndefinedOr[models.VoiceState] = types.UNDEFINED,
     ) -> models.Player:
+        """Update or create a player for the specified guild in this session.
+        
+        Parameters
+        ----------
+        guild_id : int
+            The ID of the guild to update or create the player for.
+        no_replace : bool, default: False
+            Whether to replace the current track with the new track.
+        encoded_track : str | None, optional
+            The base64 encoded track to play. ``None`` stops the current track.
+        identifier : str, optional
+            The identifier of the track to play.
+
+            .. note::
+
+                ``encoded_rack`` and ``identifier`` are mutually exclusive.
+
+        position : datetime.timedelta, optional
+            The track position.
+        end_time : datetime.timedelta, optional
+            The track end time.
+        volume : int, optional
+            The player volume from 0 to 1000.
+        paused : bool, optional
+            Whether the player is paused.
+        filters : models.Filters, optional
+            The new filters to apply. This will override all previously applied filters.
+        voice : models.VoiceState, optional
+            Information required for connecting to Discord.
+        """
         query = f"v3/sessions/{self.session_id}/players/{guild_id}"
         params: types.MutablePayloadType = {"noReplace": "true"} if no_replace else {}
 
         if voice:
             voice_dict = typing.cast(
-                types.MutableNullablePayloadType, voice.to_payload()
+                types.MutablePayloadType, voice.to_payload()
             )
             voice_dict.pop("connected")
             voice_dict.pop("ping")
         else:
-            voice_dict = None
+            voice_dict = types.UNDEFINED
+
+        to_ms: typing.Callable[[datetime.timedelta], int] = lambda x: x.microseconds // 1000
 
         data = {
             "encodedTrack": encoded_track,
             "identifier": identifier,
-            "position": position,
-            "endTime": end_time,
+            "position": utils.and_then(position, to_ms),
+            "endTime": utils.and_then(end_time, to_ms),
             "volume": volume,
             "paused": paused,
-            "filters": filters.to_payload() if filters else None,
+            "filters": utils.and_then(filters, lambda f: f.to_payload()),
             "voice": voice_dict,
         }
-        data = utils.remove_null_values(data)
+        data = utils.remove_undefined_values(data)
 
         return models.Player.from_payload(
             await self.request("PATCH", query, params=params, data=data)
         )
 
     async def destroy_player(self, guild_id: int) -> None:
+        """Destroys the player for the specified guild in this session.
+        
+        Parameters
+        ----------
+        guild_id : int
+            The ID of the guild to destroy the player for.
+        """
         await self.request(
             "DELETE",
             f"v3/sessions/{self.session_id}/players/{guild_id}",
         )
 
     async def update_session(
-        self, resuming_key: str | None = None, timeout: int | None = None
+        self, resuming_key: types.UndefinedOr[str | None] = types.UNDEFINED, timeout: types.UndefinedOr[int] = types.UNDEFINED,
     ) -> None:
+        """Update this session with a resuming key and timeout.
+        
+        Parameters
+        ----------
+        resuming_key : str, optional
+            The resuming key to be able to resume this session later.
+        timeout: int, default: 60
+            The timeout in seconds.
+        """
         await self.request(
             "PATCH",
             f"v3/sessions/{self.session_id}",
-            data=utils.remove_null_values(
+            data=utils.remove_undefined_values(
                 {
                     "resumingKey": resuming_key,
                     "timeout": timeout,
@@ -326,6 +454,13 @@ class Lavalink:
         )
 
     async def load_track(self, identifier: str) -> models.LoadTrackResult:
+        """Load a track.
+        
+        Parameters
+        ----------
+        identifier : str
+            The track's identifier.
+        """
         return models.LoadTrackResult.from_payload(
             await self.request(
                 "GET", "v3/loadtracks", params={"identifier": identifier}
@@ -333,6 +468,13 @@ class Lavalink:
         )
 
     async def decode_track(self, encoded: str) -> models.Track:
+        """Decode a base64 encoded track into its info.
+        
+        Parameters
+        ----------
+        encoded : str
+            The encoded track.
+        """
         return models.Track.from_payload(
             await self.request(
                 "GET",
@@ -344,12 +486,20 @@ class Lavalink:
         )
 
     async def decode_tracks(self, encoded: list[str]) -> list[models.Track]:
+        """Decode multiple base64 encoded tracks into their info.
+
+        Parameters
+        ----------
+        encoded : list[str]
+            The encoded tracks.
+        """
         return [
             models.Track.from_payload(t)
             for t in await self.request("GET", "v3/decodetracks", data=encoded)
         ]
 
     async def get_lavalink_info(self) -> models.LavalinkInfo:
+        """Get the lavalink server information."""
         return models.LavalinkInfo.from_payload(
             await self.request(
                 "GET",
@@ -358,6 +508,7 @@ class Lavalink:
         )
 
     async def get_lavalink_stats(self) -> models.Stats:
+        """Get the lavalink server stats."""
         return models.Stats.from_payload(
             await self.request(
                 "GET",
@@ -366,19 +517,29 @@ class Lavalink:
         )
 
     async def get_lavalink_version(self) -> str:
+        """Get the lavalink version."""
         return await self.request("GET", "version")
 
     async def get_routeplanner_status(self) -> models.RoutePlannerStatus:
+        """Get the RoutePlanner status."""
         return models.RoutePlannerStatus.from_payload(
             await self.request("GET", "v3/routeplanner/status")
         )
 
     async def unmark_failed_address(self, address: str) -> None:
+        """Unmark a failed address.
+        
+        Parameters
+        ----------
+        address : str
+            The address to unmark.
+        """
         await self.request(
             "POST", "v3/routeplanner/free/address", data={"address": address}
         )
 
     async def unmark_all_failed_addresses(self) -> None:
+        """Unmark all failed addresses."""
         await self.request(
             "POST",
             "v3/routeplanner/free/all",
