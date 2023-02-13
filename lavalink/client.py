@@ -96,6 +96,11 @@ class Lavalink:
 
         return self._websocket
 
+    @property
+    def voice_states(self) -> dict[int, models.VoiceState]:
+        """A mapping of guild ID to the bot's :obj:`~lavalink.models.VoiceState`"""
+        return self._voice_states
+
     async def start(
         self,
         password: str,
