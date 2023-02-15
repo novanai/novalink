@@ -5,12 +5,14 @@ import datetime
 import attr
 import typing_extensions
 
-import lavalink.types as types, lavalink.models as models
+import lavalink.models as models
+import lavalink.types as types
 
 
 @attr.define()
 class LavalinkError(models.BaseLavalinkModel, Exception):
     """An error returned by the lavalink server."""
+
     time: datetime.datetime
     """The time the error occurred."""
     status: int

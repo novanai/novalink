@@ -7,7 +7,8 @@ import typing
 import attr
 import typing_extensions
 
-import lavalink.models as models, lavalink.types as types
+import lavalink.models as models
+import lavalink.types as types
 
 
 class Event(models.BaseLavalinkModel, abc.ABC):
@@ -22,6 +23,7 @@ EventsCallbackT = typing.Callable[[EventT], types.AwaitableNull]
 @attr.define()
 class ReadyEvent(Event):
     """Dispatched by Lavalink upon successful connection and authorization."""
+
     resumed: bool
     """Whether a session was resumed."""
     session_id: str
@@ -41,6 +43,7 @@ class PlayerUpdateEvent(Event):
     """Dispatched every ``x`` seconds (configurable in `application.yml
     <https://github.com/freyacodes/Lavalink/blob/master/LavalinkServer/application.yml.example>`_)
     with the current state of the player."""
+
     guild_id: int
     """The guild ID of the player."""
     state: models.PlayerState
@@ -61,9 +64,11 @@ class PlayerUpdateEvent(Event):
 class StatsEvent(models.Stats, Event):
     """A collection of stats dispatched every minute."""
 
+
 @attr.define()
 class TrackStartEvent(Event):
     """Dispatched when a track starts playing."""
+
     guild_id: int
     """The guild ID."""
     encoded_track: str
@@ -86,6 +91,7 @@ class TrackStartEvent(Event):
 @attr.define()
 class TrackEndEvent(Event):
     """Dispatched when a track ends."""
+
     guild_id: int
     """The guild ID."""
     encoded_track: str

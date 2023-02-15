@@ -12,9 +12,9 @@ sys.path.insert(0, os.path.abspath(os.path.join("..", "..")))
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'novalink'
-copyright = '2023, Nova & Fridella'
-author = 'Nova & Fridella'
+project = "novalink"
+copyright = "2023, Nova & Fridella"
+author = "Nova & Fridella"
 
 with open("../../lavalink/__init__.py") as f:
     file = f.read()
@@ -34,13 +34,13 @@ extensions = [
     "sphinx.ext.viewcode",
 ]
 
-templates_path = ['_templates']
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+templates_path = ["_templates"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
-    "aiohttp": ("https://docs.aiohttp.org/en/stable/", None)
+    "aiohttp": ("https://docs.aiohttp.org/en/stable/", None),
 }
 
 autodoc_member_order = "bysource"
@@ -48,5 +48,5 @@ autodoc_member_order = "bysource"
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'furo'
-html_static_path = ['_static']
+html_theme = "furo"
+html_static_path = ["_static"]

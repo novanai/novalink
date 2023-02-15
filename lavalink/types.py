@@ -1,5 +1,7 @@
 import typing
+
 import attr
+
 
 @attr.define(hash=True, init=False, frozen=True)
 class UndefinedType(object):
@@ -7,7 +9,7 @@ class UndefinedType(object):
         return False
 
 
-_T_co = typing.TypeVar('_T_co', bound=typing.Any, covariant=True)
+_T_co = typing.TypeVar("_T_co", bound=typing.Any, covariant=True)
 UNDEFINED = UndefinedType()
 """A sentinel singleton that denotes a missing or omitted value when making api requests."""
 UndefinedOr = _T_co | UndefinedType
@@ -27,15 +29,17 @@ UndefinableAtomicTypes = AtomicTypes | UndefinedType
 
 PayloadValueTypes = MaybeSequence[AtomicTypes] | MaybeSequence["PayloadType"]
 PartiallyUndefinablePayloadValueTypes = (
-    UndefinableAtomicTypes
-    | typing.Sequence[AtomicTypes]
-    | MaybeSequence["PayloadType"]
+    UndefinableAtomicTypes | typing.Sequence[AtomicTypes] | MaybeSequence["PayloadType"]
 )
 
 PayloadType = typing.Mapping[str, PayloadValueTypes]
-PartiallyUndefinablePayloadType = typing.Mapping[str, PartiallyUndefinablePayloadValueTypes]
+PartiallyUndefinablePayloadType = typing.Mapping[
+    str, PartiallyUndefinablePayloadValueTypes
+]
 MutablePayloadType = typing.MutableMapping[str, PayloadValueTypes]
-MutablePartiallyUndefinablePayloadType = typing.MutableMapping[str, PartiallyUndefinablePayloadValueTypes]
+MutablePartiallyUndefinablePayloadType = typing.MutableMapping[
+    str, PartiallyUndefinablePayloadValueTypes
+]
 
 
 def is_str_list(any_list: list[typing.Any]) -> typing.TypeGuard[list[str]]:
