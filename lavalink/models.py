@@ -61,6 +61,7 @@ class BaseLavalinkModel(abc.ABC):
 @attr.define()
 class PlayerState(BaseLavalinkModel):
     """The player state."""
+
     time: datetime.datetime
     """Current UNIX time."""
     position: datetime.timedelta | None
@@ -95,6 +96,7 @@ class PlayerState(BaseLavalinkModel):
 @attr.define()
 class Stats(BaseLavalinkModel):
     """A collection of stats."""
+
     players: int
     """The amount of players connected to the node."""
     playing_players: int
@@ -140,6 +142,7 @@ class Stats(BaseLavalinkModel):
 @attr.define()
 class Memory:
     """Memory stats."""
+
     free: int
     """The amount of free memory in bytes."""
     used: int
@@ -169,6 +172,7 @@ class Memory:
 @attr.define()
 class CPU(BaseLavalinkModel):
     """CPU stats."""
+
     cores: int
     """The amount of cores the node has."""
     system_load: float
@@ -194,6 +198,7 @@ class CPU(BaseLavalinkModel):
 @attr.define()
 class FrameStats(BaseLavalinkModel):
     """Frames stats."""
+
     sent: int
     """The amount of frames sent to Discord."""
     nulled: int
@@ -235,7 +240,7 @@ class ExceptionSeverity(enum.Enum):
     SUSPICIOUS = "SUSPICIOUS"
     """The cause might not be exactly known, but is possibly caused by outside factors. For example when
     an outside service responds in a format that lavalink does not expect."""
-    FATAL = "FATAL"
+    FAULT = "FAULT"
     """If the probable cause is an issue with lavalink or when there is no way to tell what the cause
     might be. This is the default level and other levels are used in cases where the thrower has more
     in-depth knowledge about the error."""
@@ -268,6 +273,7 @@ class TrackException(BaseLavalinkModel):
 @attr.define()
 class Player(BaseLavalinkModel):
     """A player."""
+
     guild_id: int
     """The guild ID of the player."""
     track: Track | None
@@ -313,6 +319,7 @@ class Player(BaseLavalinkModel):
 @attr.define()
 class Track(BaseLavalinkModel):
     """A track."""
+
     encoded: str
     """The base64 encoded track data."""
     info: TrackInfo
@@ -331,6 +338,7 @@ class Track(BaseLavalinkModel):
 @attr.define()
 class TrackInfo(BaseLavalinkModel):
     """Track info."""
+
     identifier: str
     """The track identifier."""
     is_seekable: bool
@@ -397,8 +405,8 @@ class VoiceState(BaseLavalinkModel):
     """The Discord voice session id to authenticate with."""
     connected: bool | None = None
     """Whether the player is connected. Response only."""
-    ping: int | None = None
-    """Roundtrip latency in milliseconds to the voice gateway. ``None`` if not connected. Response only"""
+    ping: datetime.timedelta | None = None
+    """Roundtrip latency to the voice gateway. ``None`` if not connected. Response only"""
 
     @classmethod
     def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
@@ -421,7 +429,7 @@ class VoiceState(BaseLavalinkModel):
             endpoint,
             session_id,
             connected,
-            ping,
+            datetime.timedelta(milliseconds=ping) if ping else None,
         )
 
     def to_payload(self) -> types.PayloadType:
@@ -430,7 +438,7 @@ class VoiceState(BaseLavalinkModel):
             "endpoint": self.endpoint,
             "sessionId": self.session_id,
             "connected": self.connected,
-            "ping": self.ping,
+            "ping": int(self.ping.total_seconds() * 1000) if self.ping else None,
         }
 
 
@@ -519,6 +527,7 @@ class Equalizer(BaseLavalinkModel):
     """There are 15 bands (0-14) that can be changed. "gain" is the multiplier for the given band. The default value
     is 0. Valid values range from -0.25 to 1.0, where -0.25 means the given band is completely muted, and 0.25 means
     it is doubled. Modifying the gain could also change the volume of the output."""
+
     band: int
     """The band (0 to 14)."""
     gain: float
@@ -573,6 +582,7 @@ class Karaoke(BaseLavalinkModel):
 @attr.define()
 class Timescale(BaseLavalinkModel):
     """Changes the speed, pitch, and rate."""
+
     speed: float | None
     """The playback speed 0.0 ≤ x."""
     pitch: float | None
@@ -599,6 +609,7 @@ class Timescale(BaseLavalinkModel):
 class Tremolo(BaseLavalinkModel):
     """Uses amplification to create a shuddering effect, where the volume quickly oscillates.
     https://en.wikipedia.org/wiki/File:Fuse_Electronics_Tremolo_MK-III_Quick_Demo.ogv"""
+
     frequency: float | None
     """The frequency 0.0 < x."""
     depth: float | None
@@ -617,6 +628,7 @@ class Tremolo(BaseLavalinkModel):
 @attr.define()
 class Vibrato(BaseLavalinkModel):
     """Similar to tremolo. While tremolo oscillates the volume, vibrato oscillates the pitch."""
+
     frequency: float | None
     """The frequency 0.0 < x ≤ 14.0."""
     depth: float | None
@@ -635,6 +647,7 @@ class Vibrato(BaseLavalinkModel):
 @attr.define()
 class Rotation(BaseLavalinkModel):
     """Rotates the sound around the stereo channels/user headphones aka Audio Panning."""
+
     rotation_hz: float | None
     """The frequency of the audio rotating around the listener in Hz."""
 
@@ -653,6 +666,7 @@ class Rotation(BaseLavalinkModel):
 @attr.define()
 class Distortion(BaseLavalinkModel):
     """Distortion effect."""
+
     sin_offset: float | None
     """The sin offset."""
     sin_scale: float | None
@@ -721,6 +735,7 @@ class ChannelMix(BaseLavalinkModel):
     """Mixes both channels (left and right), with a configurable factor on how much each channel affects the other.
     With the defaults, both channels are kept independent of each other. Setting all factors to 0.5 means both channels
     get the same audio."""
+
     left_to_left: float | None
     """The left to left channel mix factor (0.0 ≤ x ≤ 1.0)."""
     left_to_right: float | None
@@ -764,6 +779,7 @@ class ChannelMix(BaseLavalinkModel):
 class LowPass(BaseLavalinkModel):
     """Higher frequencies get suppressed, while lower frequencies pass through this filter, thus the name low pass.
     Any smoothing values equal to, or less than 1.0 will disable the filter."""
+
     smoothing: float | None
     """The smoothing factor (1.0 < x)."""
 
@@ -779,6 +795,7 @@ class LowPass(BaseLavalinkModel):
 @attr.define()
 class LoadTrackResult(BaseLavalinkModel):
     """Tracking loading result."""
+
     load_type: LoadResultType
     """The type of the result"""
     playlist_info: PlaylistInfo | None
