@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import logging
 import typing
-import datetime
 
 import aiohttp
 
-import lavalink.types as types, lavalink.errors as errors, lavalink.events as events, lavalink.models as models, lavalink.utils as utils
-
+import lavalink.errors as errors
+import lavalink.events as events
+import lavalink.models as models
+import lavalink.types as types
+import lavalink.utils as utils
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +31,7 @@ class Lavalink:
     heartbeat : int, default: 30
         How often to ping the lavalink server (in seconds).
     """
+
     def __init__(
         self,
         host: str,
@@ -74,9 +78,7 @@ class Lavalink:
     def session_id(self) -> str:
         """The lavalink session ID."""
         if self._session_id is None:
-            raise RuntimeError(
-                "session_id is None, Lavalink.start() was never called."
-            )
+            raise RuntimeError("session_id is None, Lavalink.start() was never called.")
 
         return self._session_id
 
@@ -108,7 +110,7 @@ class Lavalink:
         resume_key: str | None = None,
     ) -> None:
         """Connect to the lavalink websocket and start listening for events.
-        
+
         Parameters
         ----------
         password : str
@@ -218,15 +220,34 @@ class Lavalink:
             for listener in listeners:
                 asyncio.create_task(listener(event))
 
+    @typing.overload
     def listen(
-        self, event_type: type[typing.Any]
+        self,
+        event_type: type[typing.Any],
     ) -> typing.Callable[[events.EventsCallbackT[typing.Any]], None]:
+        ...
+
+    @typing.overload
+    def listen(
+        self,
+        event_type: type[typing.Any],
+        callback: events.EventsCallbackT[typing.Any],
+    ) -> None:
+        ...
+
+    def listen(
+        self,
+        event_type: type[typing.Any],
+        callback: events.EventsCallbackT[typing.Any] | None = None,
+    ) -> typing.Callable[[events.EventsCallbackT[typing.Any]], None] | None:
         """Listen for an event received from the lavalink server.
-        
+
         Parameters
         ----------
             event_type : subclass of :obj:`~lavalink.events.Event`
                 The event to listen for.
+            callback : events.EventsCallbackT[typing.Any], optional
+                The callback function for this event, if not used as a decorator
 
         Example
         -------
@@ -237,22 +258,40 @@ class Lavalink:
             @lava.listen(lavalink.ReadyEvent)
             async def on_ready(event: lavalink.ReadyEvent):
                 print(f"Lavalink is ready! Session ID: {event.session_id}")
+
+            # OR
+
+            async def on_ready(event: lavalink.ReadyEvent):
+                print(f"Lavalink is ready! Session ID: {event.session_id}")
+
+            lava.listen(lavalink.ReadyEvent, on_ready)
         """
+        if callback:
+            self._add_event_listener(event_type, callback)
+            return None
+
         def decorator(
             callback: events.EventsCallbackT[typing.Any],
         ) -> None:
-            if event_type in self._event_listeners:
-                self._event_listeners[event_type].append(callback)
-            else:
-                self._event_listeners[event_type] = [callback]
+            self._add_event_listener(event_type, callback)
 
         return decorator
+
+    def _add_event_listener(
+        self,
+        event_type: type[typing.Any],
+        callback: events.EventsCallbackT[typing.Any],
+    ) -> None:
+        if event_type in self._event_listeners:
+            self._event_listeners[event_type].append(callback)
+        else:
+            self._event_listeners[event_type] = [callback]
 
     def handle_voice_server_update(
         self, guild_id: int, endpoint: str | None, token: str
     ) -> None:
         """Handle a voice server update event sent by Discord.
-        
+
         Parameters
         ----------
         guild_id : int
@@ -265,15 +304,17 @@ class Lavalink:
         if self._voice_states.get(guild_id):
             if endpoint:
                 self._voice_states[guild_id].endpoint = endpoint.replace("wss://", "")
-                asyncio.create_task(self.update_player(guild_id, voice=self._voice_states[guild_id]))
-            
+                asyncio.create_task(
+                    self.update_player(guild_id, voice=self._voice_states[guild_id])
+                )
+
             self._voice_states[guild_id].token = token
 
     def handle_voice_state_update(
         self, guild_id: int, user_id: int, session_id: str
     ) -> None:
         """Handle a voice state update event sent by Discord.
-        
+
         Parameters
         ----------
         guild_id : int
@@ -337,7 +378,7 @@ class Lavalink:
 
     async def get_player(self, guild_id: int) -> models.Player:
         """Get the player for a specific guild in this session.
-        
+
         Parameters
         ----------
         guild_id : int
@@ -352,6 +393,7 @@ class Lavalink:
     async def update_player(
         self,
         guild_id: int,
+        *,
         no_replace: types.UndefinedOr[bool] = types.UNDEFINED,
         encoded_track: types.UndefinedOr[str | None] = types.UNDEFINED,
         identifier: types.UndefinedOr[str] = types.UNDEFINED,
@@ -363,7 +405,7 @@ class Lavalink:
         voice: types.UndefinedOr[models.VoiceState] = types.UNDEFINED,
     ) -> models.Player:
         """Update or create a player for the specified guild in this session.
-        
+
         Parameters
         ----------
         guild_id : int
@@ -392,19 +434,24 @@ class Lavalink:
         voice : models.VoiceState, optional
             Information required for connecting to Discord.
         """
+        if (encoded_track or identifier) and not self.voice_states.get(guild_id):
+            raise ValueError(
+                "Can't play track without voice state information. Did you forget to join a channel?"
+            )
+
         query = f"v3/sessions/{self.session_id}/players/{guild_id}"
         params: types.MutablePayloadType = {"noReplace": "true"} if no_replace else {}
 
         if voice:
-            voice_dict = typing.cast(
-                types.MutablePayloadType, voice.to_payload()
-            )
+            voice_dict = typing.cast(types.MutablePayloadType, voice.to_payload())
             voice_dict.pop("connected")
             voice_dict.pop("ping")
         else:
             voice_dict = types.UNDEFINED
 
-        to_ms: typing.Callable[[datetime.timedelta], int] = lambda x: x.microseconds // 1000
+        to_ms: typing.Callable[[datetime.timedelta], float] = lambda x: int(
+            x.total_seconds() * 1000
+        )
 
         data = {
             "encodedTrack": encoded_track,
@@ -424,7 +471,7 @@ class Lavalink:
 
     async def destroy_player(self, guild_id: int) -> None:
         """Destroys the player for the specified guild in this session.
-        
+
         Parameters
         ----------
         guild_id : int
@@ -436,10 +483,12 @@ class Lavalink:
         )
 
     async def update_session(
-        self, resuming_key: types.UndefinedOr[str | None] = types.UNDEFINED, timeout: types.UndefinedOr[int] = types.UNDEFINED,
+        self,
+        resuming_key: types.UndefinedOr[str | None] = types.UNDEFINED,
+        timeout: types.UndefinedOr[int] = types.UNDEFINED,
     ) -> None:
         """Update this session with a resuming key and timeout.
-        
+
         Parameters
         ----------
         resuming_key : str, optional
@@ -460,7 +509,7 @@ class Lavalink:
 
     async def load_track(self, identifier: str) -> models.LoadTrackResult:
         """Load a track.
-        
+
         Parameters
         ----------
         identifier : str
@@ -474,7 +523,7 @@ class Lavalink:
 
     async def decode_track(self, encoded: str) -> models.Track:
         """Decode a base64 encoded track into its info.
-        
+
         Parameters
         ----------
         encoded : str
@@ -533,7 +582,7 @@ class Lavalink:
 
     async def unmark_failed_address(self, address: str) -> None:
         """Unmark a failed address.
-        
+
         Parameters
         ----------
         address : str
