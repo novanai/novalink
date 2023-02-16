@@ -33,9 +33,6 @@ class Queue:
         ):
             lavalink.listen(event, self.track_events)
 
-    def __len__(self) -> int:
-        return len(self.queue)
-
     @property
     def now_playing(self) -> models.Track | None:
         if self.now_playing_pos < len(self.queue):
@@ -66,8 +63,8 @@ class Queue:
         self.queue.append(track)
 
         if not self.is_paused and (
-            (self.now_playing_pos == 0 and len(self) == 1)
-            or (self.now_playing_pos == len(self) - 1)
+            (self.now_playing_pos == 0 and len(self.queue) == 1)
+            or (self.now_playing_pos == len(self.queue) - 1)
         ):
             # one track added to empty queue or new track added after queue end passed
             await self.player_manager.play(
@@ -77,12 +74,12 @@ class Queue:
 
     async def next(self) -> models.Track | None:
         """Move to the next track."""
-        if not self.now_playing_pos < len(self):
+        if not self.now_playing_pos < len(self.queue):
             return None
 
         self.now_playing_pos += 1
 
-        if not self.is_paused and self.now_playing_pos < len(self):
+        if not self.is_paused and self.now_playing_pos < len(self.queue):
             assert self.now_playing
             await self.player_manager.play(
                 self.guild_id,
@@ -123,18 +120,20 @@ class Queue:
             self.queue[self.now_playing_pos + 1 :] = combined[self.now_playing_pos + 1 :]
             self.queue[: self.now_playing_pos] = combined[: self.now_playing_pos]
 
-    async def skip_to(self, index: int) -> models.Track:
-        if not 0 <= index < len(self.queue):
+    async def skip_to(self, index: int) -> models.Track | None:
+        if not 0 <= index <= len(self.queue):
             raise IndexError
 
         self.now_playing_pos = index
-        assert self.now_playing
 
         if not self.is_paused:
-            await self.player_manager.play(
-                self.guild_id,
-                self.now_playing.encoded,
-            )
+            if self.now_playing:
+                await self.player_manager.play(
+                    self.guild_id,
+                    self.now_playing.encoded,
+                )
+            else:
+                await self.player_manager.stop(self.guild_id)
 
         return self.now_playing
 
