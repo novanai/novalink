@@ -6,10 +6,15 @@ import typing
 import lavalink.client as client
 import lavalink.events as events
 import lavalink.models as models
+import enum
 
 if typing.TYPE_CHECKING:
     import lavalink.ext.manager as manager
 
+class RepeatMode(enum.Enum):
+    NONE = "none"
+    ONE = "one"
+    ALL = "all"
 
 class Queue:
     def __init__(
@@ -25,6 +30,7 @@ class Queue:
         self.queue: list[models.Track] = []
         self.now_playing_pos: int = 0
         self.is_paused: bool = False
+        self.repeat_mode: RepeatMode = RepeatMode.NONE
 
         for event in (
             events.TrackEndEvent,
@@ -57,7 +63,15 @@ class Queue:
         ):
             return
 
-        await self.next()
+        if self.repeat_mode is RepeatMode.ONE:
+            await self.player_manager.play(
+                self.guild_id,
+                event.encoded_track,
+            )
+        elif self.repeat_mode is RepeatMode.ALL and self.now_playing_pos >= len(self.queue):
+            await self.skip_to(0)
+        else:
+            await self.next()
 
     async def add(self, track: models.Track) -> None:
         self.queue.append(track)
@@ -115,6 +129,7 @@ class Queue:
             self.queue[: self.now_playing_pos] = history
         
         elif mode == 1:
+            # shuffle whole queue without respect to now_playing_pos
             combined = upcoming + history
             random.shuffle(combined)
             self.queue[self.now_playing_pos + 1 :] = combined[self.now_playing_pos + 1 :]
@@ -141,3 +156,22 @@ class Queue:
 
     def clear(self) -> None:
         self.queue.clear()
+
+    @typing.overload
+    def remove_tracks(self, *tracks: models.Track) -> None:
+        ...
+
+    @typing.overload
+    def remove_tracks(self, *indexes: int) -> None:
+        ...
+
+    def remove_tracks(self, *tracks_or_indexes: models.Track | int) -> None:
+        for item in tracks_or_indexes:
+            if isinstance(item, models.Track):
+                self.queue.remove(item)
+            else:
+                self.queue.pop(item)
+
+    def set_repeat_mode(self, mode: RepeatMode) -> None:
+        self.repeat_mode = mode
+

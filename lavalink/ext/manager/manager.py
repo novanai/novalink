@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import lavalink.client as client
+import lavalink.models as models
 import lavalink.ext.manager.queue as queue_
 
+import datetime
 
 class PlayerManager:
     def __init__(self, lavalink: client.Lavalink) -> None:
@@ -59,3 +61,21 @@ class PlayerManager:
     async def destroy(self, guild_id: int) -> None:
         await self.lavalink.destroy_player(guild_id)
         self.delete_queue(guild_id)
+
+    async def seek_to(self, guild_id: int, position: datetime.timedelta) -> None:
+        await self.lavalink.update_player(
+            guild_id,
+            position=position
+        )
+    
+    async def set_volume(self, guild_id: int, volume: int) -> None:
+        await self.lavalink.update_player(
+            guild_id,
+            volume=volume
+        )
+
+    async def set_filters(self, guild_id: int, filters: models.Filters) -> None:
+        await self.lavalink.update_player(
+            guild_id,
+            filters=filters
+        )
