@@ -398,7 +398,7 @@ class Lavalink:
         encoded_track: types.UndefinedOr[str | None] = types.UNDEFINED,
         identifier: types.UndefinedOr[str] = types.UNDEFINED,
         position: types.UndefinedOr[datetime.timedelta] = types.UNDEFINED,
-        end_time: types.UndefinedOr[datetime.timedelta] = types.UNDEFINED,
+        end_time: types.UndefinedOr[datetime.timedelta] | None = types.UNDEFINED,
         volume: types.UndefinedOr[int] = types.UNDEFINED,
         paused: types.UndefinedOr[bool] = types.UNDEFINED,
         filters: types.UndefinedOr[models.Filters] = types.UNDEFINED,
@@ -423,8 +423,8 @@ class Lavalink:
 
         position : datetime.timedelta, optional
             The track position.
-        end_time : datetime.timedelta, optional
-            The track end time.
+        end_time : datetime.timedelta | None, optional
+            The track end time. Must be > 0.
         volume : int, optional
             The player volume from 0 to 1000.
         paused : bool, optional
