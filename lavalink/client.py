@@ -449,15 +449,15 @@ class Lavalink:
         else:
             voice_dict = types.UNDEFINED
 
-        to_ms: typing.Callable[[datetime.timedelta], float] = lambda x: int(
-            x.total_seconds() * 1000
-        )
+
+        def to_ms(x: datetime.timedelta) -> float:
+            return x.total_seconds() * 1000
 
         data = {
             "encodedTrack": encoded_track,
             "identifier": identifier,
             "position": utils.and_then(position, to_ms),
-            "endTime": utils.and_then(end_time, to_ms),
+            "endTime": utils.and_then(end_time, to_ms) if end_time is not None else end_time,
             "volume": volume,
             "paused": paused,
             "filters": utils.and_then(filters, lambda f: f.to_payload()),
