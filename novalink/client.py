@@ -8,11 +8,11 @@ import typing
 
 import aiohttp
 
-import lavalink.errors as errors
-import lavalink.events as events
-import lavalink.models as models
-import lavalink.types as types
-import lavalink.utils as utils
+import novalink.errors as errors
+import novalink.events as events
+import novalink.models as models
+import novalink.types as types
+import novalink.utils as utils
 
 log = logging.getLogger(__name__)
 

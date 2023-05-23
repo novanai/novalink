@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import datetime
 
-import lavalink.client as client
-import lavalink.ext.manager.errors as errors
-import lavalink.ext.manager.models as ext_models
-import lavalink.ext.manager.queue as queue_
-import lavalink.models as models
+import novalink.client as client
+import novalink.ext.manager.errors as errors
+import novalink.ext.manager.models as ext_models
+import novalink.ext.manager.queue as queue_
+import novalink.models as models
 
 
 class PlayerManager:

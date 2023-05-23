@@ -8,7 +8,7 @@ import typing
 import attr
 import typing_extensions
 
-import lavalink.types as types
+import novalink.types as types
 
 
 class BaseLavalinkModel(abc.ABC):

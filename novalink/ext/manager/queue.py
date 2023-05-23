@@ -3,13 +3,13 @@ from __future__ import annotations
 import random
 import typing
 
-import lavalink.client as client
-import lavalink.events as events
-import lavalink.ext.manager.models as ext_models
-import lavalink.models as models
+import novalink.client as client
+import novalink.events as events
+import novalink.ext.manager.models as ext_models
+import novalink.models as models
 
 if typing.TYPE_CHECKING:
-    import lavalink.ext.manager as manager
+    import novalink.ext.manager as manager
 
 
 class Queue:

@@ -1,6 +1,6 @@
 import typing
 
-import lavalink.types as types
+import novalink.types as types
 
 _T1 = typing.TypeVar("_T1", bound=typing.Any)
 _T2 = typing.TypeVar("_T2", bound=typing.Any)
