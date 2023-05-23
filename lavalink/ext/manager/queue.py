@@ -58,7 +58,7 @@ class Queue:
         if self.repeat_mode is ext_models.RepeatMode.ONE:
             await self.player_manager.play(
                 self.guild_id,
-                event.encoded_track,
+                event.track.encoded,
             )
         elif (
             self.repeat_mode is ext_models.RepeatMode.ALL

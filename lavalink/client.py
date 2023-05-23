@@ -46,7 +46,6 @@ class Lavalink:
 
         self._password: str | None = None
         self._bot_id: int | None = None
-        self.resume_key: str | None = None
         self.shutdown: bool = False
 
         self._session_id: str | None = None
@@ -100,14 +99,14 @@ class Lavalink:
 
     @property
     def voice_states(self) -> dict[int, models.VoiceState]:
-        """A mapping of guild ID to the bot's :obj:`~lavalink.models.VoiceState`"""
+        """A mapping of guild ID to the bot's :obj:`~lavalink.models.VoiceState` for that guild."""
         return self._voice_states
 
     async def start(
         self,
         password: str,
         bot_id: int,
-        resume_key: str | None = None,
+        session_id: str | None = None,
     ) -> None:
         """Connect to the lavalink websocket and start listening for events.
 
@@ -118,20 +117,20 @@ class Lavalink:
             `lavalink config <https://github.com/freyacodes/Lavalink/blob/master/LavalinkServer/application.yml.example>`_.
         bot_id : int
             The user ID of the bot.
-        resume_key : str, optional
+        session_id : str, optional
             A resume key, used to resume a session.
         """
         self._password = password
         self._bot_id = bot_id
-        self._resume_key = resume_key
+        self._session_id = session_id
 
         headers = {
             "Authorization": password,
             "User-Id": str(bot_id),
-            "Client-Name": "lava.py/0.0.0",
+            "Client-Name": "novalink/0.0.0",
         }
-        if resume_key:
-            headers["Resume-Key"] = resume_key
+        if session_id:
+            headers["Session-Id"] = session_id
 
         self._session = aiohttp.ClientSession(
             headers=headers,
@@ -150,7 +149,7 @@ class Lavalink:
         while not self._websocket:
             try:
                 self._websocket = await self.session.ws_connect(  # pyright: ignore[reportUnknownMemberType]
-                    f"{'wss' if self.is_secure else 'ws'}://{self.host}:{self.port}/v3/websocket",
+                    f"{'wss' if self.is_secure else 'ws'}://{self.host}:{self.port}/v4/websocket",
                     heartbeat=self.heartbeat,
                 )
             except (aiohttp.ClientConnectorError, aiohttp.WSServerHandshakeError) as e:
@@ -189,9 +188,6 @@ class Lavalink:
             session_id = data["sessionId"]
             assert isinstance(session_id, str)
             self._session_id = session_id
-
-            if self.resume_key:
-                await self.update_session(self.resume_key)
 
             self.dispatch(events.ReadyEvent, data)
 
@@ -332,7 +328,9 @@ class Lavalink:
 
         else:
             self._voice_states[guild_id] = models.VoiceState(
-                "", "", session_id, None, None
+                "",
+                "",
+                session_id,
             )
 
     # REST API METHODS
@@ -369,12 +367,11 @@ class Lavalink:
             if res.content_type == "text/plain":
                 return (await res.read()).decode("utf-8")
 
-    async def get_players(self) -> list[models.Player]:
+    async def get_players(self) -> typing.Iterable[models.Player]:
         """Get a list of players for this session."""
-        return [
-            models.Player.from_payload(p)
-            for p in await self.request("GET", f"v3/sessions/{self.session_id}/players")
-        ]
+        return models.Player.from_payloads(
+            await self.request("GET", f"v4/sessions/{self.session_id}/players")
+        )
 
     async def get_player(self, guild_id: int) -> models.Player:
         """Get the player for a specific guild in this session.
@@ -386,7 +383,7 @@ class Lavalink:
         """
         return models.Player.from_payload(
             await self.request(
-                "GET", f"v3/sessions/{self.session_id}/players/{guild_id}"
+                "GET", f"v4/sessions/{self.session_id}/players/{guild_id}"
             )
         )
 
@@ -439,16 +436,13 @@ class Lavalink:
                 "Can't play track without voice state information. Did you forget to join a channel?"
             )
 
-        query = f"v3/sessions/{self.session_id}/players/{guild_id}"
+        query = f"v4/sessions/{self.session_id}/players/{guild_id}"
         params: types.MutablePayloadType = {"noReplace": "true"} if no_replace else {}
 
         if voice:
             voice_dict = typing.cast(types.MutablePayloadType, voice.to_payload())
-            voice_dict.pop("connected")
-            voice_dict.pop("ping")
         else:
             voice_dict = types.UNDEFINED
-
 
         def to_ms(x: datetime.timedelta) -> float:
             return x.total_seconds() * 1000
@@ -457,7 +451,9 @@ class Lavalink:
             "encodedTrack": encoded_track,
             "identifier": identifier,
             "position": utils.and_then(position, to_ms),
-            "endTime": utils.and_then(end_time, to_ms) if end_time is not None else end_time,
+            "endTime": utils.and_then(end_time, to_ms)
+            if end_time is not None
+            else end_time,
             "volume": volume,
             "paused": paused,
             "filters": utils.and_then(filters, lambda f: f.to_payload()),
@@ -479,35 +475,35 @@ class Lavalink:
         """
         await self.request(
             "DELETE",
-            f"v3/sessions/{self.session_id}/players/{guild_id}",
+            f"v4/sessions/{self.session_id}/players/{guild_id}",
         )
 
     async def update_session(
         self,
-        resuming_key: types.UndefinedOr[str | None] = types.UNDEFINED,
+        resuming: types.UndefinedOr[bool] = types.UNDEFINED,
         timeout: types.UndefinedOr[int] = types.UNDEFINED,
     ) -> None:
         """Update this session with a resuming key and timeout.
 
         Parameters
         ----------
-        resuming_key : str, optional
-            The resuming key to be able to resume this session later.
+        resuming_key : bool
+            Whether resuming is enabled for this session or not.
         timeout: int, default: 60
             The timeout in seconds.
         """
         await self.request(
             "PATCH",
-            f"v3/sessions/{self.session_id}",
+            f"v4/sessions/{self.session_id}",
             data=utils.remove_undefined_values(
                 {
-                    "resumingKey": resuming_key,
+                    "resuming": resuming,
                     "timeout": timeout,
                 }
             ),
         )
 
-    async def load_track(self, identifier: str) -> models.LoadTrackResult:
+    async def load_track(self, identifier: str) -> models.LoadResult:
         """Load a track.
 
         Parameters
@@ -515,9 +511,9 @@ class Lavalink:
         identifier : str
             The track's identifier.
         """
-        return models.LoadTrackResult.from_payload(
+        return models.LoadResult.from_payload(
             await self.request(
-                "GET", "v3/loadtracks", params={"identifier": identifier}
+                "GET", "v4/loadtracks", params={"identifier": identifier}
             )
         )
 
@@ -527,12 +523,12 @@ class Lavalink:
         Parameters
         ----------
         encoded : str
-            The encoded track.
+            The base64 encoded track.
         """
         return models.Track.from_payload(
             await self.request(
                 "GET",
-                "v3/decodetrack",
+                "v4/decodetrack",
                 params={
                     "encodedTrack": encoded,
                 },
@@ -549,7 +545,7 @@ class Lavalink:
         """
         return [
             models.Track.from_payload(t)
-            for t in await self.request("GET", "v3/decodetracks", data=encoded)
+            for t in await self.request("GET", "v4/decodetracks", data=encoded)
         ]
 
     async def get_lavalink_info(self) -> models.LavalinkInfo:
@@ -557,7 +553,7 @@ class Lavalink:
         return models.LavalinkInfo.from_payload(
             await self.request(
                 "GET",
-                "v3/info",
+                "v4/info",
             )
         )
 
@@ -566,7 +562,7 @@ class Lavalink:
         return models.Stats.from_payload(
             await self.request(
                 "GET",
-                "v3/stats",
+                "v4/stats",
             )
         )
 
@@ -577,7 +573,7 @@ class Lavalink:
     async def get_routeplanner_status(self) -> models.RoutePlannerStatus:
         """Get the RoutePlanner status."""
         return models.RoutePlannerStatus.from_payload(
-            await self.request("GET", "v3/routeplanner/status")
+            await self.request("GET", "v4/routeplanner/status")
         )
 
     async def unmark_failed_address(self, address: str) -> None:
@@ -589,12 +585,12 @@ class Lavalink:
             The address to unmark.
         """
         await self.request(
-            "POST", "v3/routeplanner/free/address", data={"address": address}
+            "POST", "v4/routeplanner/free/address", data={"address": address}
         )
 
     async def unmark_all_failed_addresses(self) -> None:
         """Unmark all failed addresses."""
         await self.request(
             "POST",
-            "v3/routeplanner/free/all",
+            "v4/routeplanner/free/all",
         )

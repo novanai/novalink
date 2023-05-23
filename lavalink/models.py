@@ -64,8 +64,8 @@ class PlayerState(BaseLavalinkModel):
 
     time: datetime.datetime
     """Current UNIX time."""
-    position: datetime.timedelta | None
-    """Position of the track, if it is playing."""
+    position: datetime.timedelta
+    """Position of the track."""
     connected: bool
     """Whether lavalink is connected to the voice gateway."""
     ping: datetime.timedelta | None
@@ -74,20 +74,20 @@ class PlayerState(BaseLavalinkModel):
     @classmethod
     def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         time = data["time"]
-        position = data.get("position")
+        position = data["position"]
         connected = data["connected"]
         ping = data["ping"]
 
         assert (
             isinstance(time, int)
-            and isinstance(position, int | None)
+            and isinstance(position, int)
             and isinstance(connected, bool)
             and isinstance(ping, int)
         )
 
         return cls(
             datetime.datetime.fromtimestamp(time / 1000),
-            datetime.timedelta(milliseconds=position) if position else None,
+            datetime.timedelta(milliseconds=position),
             connected,
             datetime.timedelta(milliseconds=ping) if ping != -1 else None,
         )
@@ -118,7 +118,7 @@ class Stats(BaseLavalinkModel):
         uptime = data["uptime"]
         memory = data["memory"]
         cpu = data["cpu"]
-        frame_stats = data.get("frameStats")
+        frame_stats = data["frameStats"]
 
         assert (
             isinstance(players, int)
@@ -222,32 +222,32 @@ class FrameStats(BaseLavalinkModel):
 
 
 class TrackEndReason(enum.Enum):
-    FINISHED = "FINISHED"
+    FINISHED = "finished"
     """The track finished playing."""
-    LOAD_FAILED = "LOAD_FAILED"
+    LOAD_FAILED = "loadFailed"
     """The track failed to load."""
-    STOPPED = "STOPPED"
+    STOPPED = "stopped"
     """The track was stopped."""
-    REPLACED = "REPLACED"
+    REPLACED = "replaced"
     """The track was replaced."""
-    CLEANUP = "CLEANUP"
+    CLEANUP = "cleanup"
     """The track was cleaned up."""
 
 
 class ExceptionSeverity(enum.Enum):
-    COMMON = "COMMON"
+    COMMON = "common"
     """The cause is known and expected, indicates that there is nothing wrong with lavalink itself."""
-    SUSPICIOUS = "SUSPICIOUS"
+    SUSPICIOUS = "suspicious"
     """The cause might not be exactly known, but is possibly caused by outside factors. For example when
     an outside service responds in a format that lavalink does not expect."""
-    FAULT = "FAULT"
+    FAULT = "fault"
     """If the probable cause is an issue with lavalink or when there is no way to tell what the cause
     might be. This is the default level and other levels are used in cases where the thrower has more
     in-depth knowledge about the error."""
 
 
 @attr.define()
-class TrackException(BaseLavalinkModel):
+class LavalinkException(BaseLavalinkModel):
     message: str | None
     """The message of the exception."""
     severity: ExceptionSeverity
@@ -282,6 +282,8 @@ class Player(BaseLavalinkModel):
     """The volume of the player, range 0-1000, in percentage."""
     paused: bool
     """Whether the player is paused."""
+    state: PlayerState
+    """The state of the player."""
     voice: VoiceState
     """The voice state of the player."""
     filters: Filters
@@ -293,6 +295,7 @@ class Player(BaseLavalinkModel):
         track = data["track"]
         volume = data["volume"]
         paused = data["paused"]
+        state = data["state"]
         voice = data["voice"]
         filters = data["filters"]
 
@@ -302,6 +305,7 @@ class Player(BaseLavalinkModel):
             and isinstance(track, dict | None)
             and isinstance(volume, int)
             and isinstance(paused, bool)
+            and isinstance(state, dict)
             and isinstance(voice, dict)
             and isinstance(filters, dict)
         )
@@ -311,6 +315,7 @@ class Player(BaseLavalinkModel):
             Track.from_payload_nullable(track),
             volume,
             paused,
+            PlayerState.from_payload(state),
             VoiceState.from_payload(voice),
             Filters.from_payload(filters),
         )
@@ -324,15 +329,18 @@ class Track(BaseLavalinkModel):
     """The base64 encoded track data."""
     info: TrackInfo
     """Info about the track."""
+    plugin_info: typing.Any
+    """Addition track info provided by plugins."""
 
     @classmethod
     def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         encoded = data["encoded"]
         info = data["info"]
+        plugin_info = data["pluginInfo"]
 
         assert isinstance(encoded, str) and isinstance(info, dict)
 
-        return cls(encoded, TrackInfo.from_payload(info))
+        return cls(encoded, TrackInfo.from_payload(info), plugin_info)
 
 
 @attr.define()
@@ -355,6 +363,10 @@ class TrackInfo(BaseLavalinkModel):
     """The track title."""
     uri: str | None
     """The track uri."""
+    artwork_url: str | None
+    """The track artwork url."""
+    isrc: str | None
+    """The track `ISRC <https://en.wikipedia.org/wiki/International_Standard_Recording_Code>`_"""
     source_name: str
     """The track source name."""
 
@@ -368,6 +380,8 @@ class TrackInfo(BaseLavalinkModel):
         position = data["position"]
         title = data["title"]
         uri = data["uri"]
+        artwork_url = data["artworkUrl"]
+        isrc = data["isrc"]
         source_name = data["sourceName"]
 
         assert (
@@ -379,6 +393,8 @@ class TrackInfo(BaseLavalinkModel):
             and isinstance(position, int)
             and isinstance(title, str)
             and isinstance(uri, str | None)
+            and isinstance(artwork_url, str | None)
+            and isinstance(isrc, str | None)
             and isinstance(source_name, str)
         )
 
@@ -391,6 +407,8 @@ class TrackInfo(BaseLavalinkModel):
             datetime.timedelta(milliseconds=position),
             title,
             uri,
+            artwork_url,
+            isrc,
             source_name,
         )
 
@@ -403,33 +421,23 @@ class VoiceState(BaseLavalinkModel):
     """The Discord voice endpoint to connect to."""
     session_id: str
     """The Discord voice session id to authenticate with."""
-    connected: bool | None = None
-    """Whether the player is connected. Response only."""
-    ping: datetime.timedelta | None = None
-    """Roundtrip latency to the voice gateway. ``None`` if not connected. Response only"""
 
     @classmethod
     def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         token = data["token"]
         endpoint = data["endpoint"]
         session_id = data["sessionId"]
-        connected = data.get("connected")
-        ping = data.get("ping")
 
         assert (
             isinstance(token, str)
             and isinstance(endpoint, str)
             and isinstance(session_id, str)
-            and isinstance(connected, bool | None)
-            and isinstance(ping, int | None)
         )
 
         return cls(
             token,
             endpoint,
             session_id,
-            connected,
-            datetime.timedelta(milliseconds=ping) if ping else None,
         )
 
     def to_payload(self) -> types.PayloadType:
@@ -437,8 +445,6 @@ class VoiceState(BaseLavalinkModel):
             "token": self.token,
             "endpoint": self.endpoint,
             "sessionId": self.session_id,
-            "connected": self.connected,
-            "ping": int(self.ping.total_seconds() * 1000) if self.ping else None,
         }
 
 
@@ -793,71 +799,112 @@ class LowPass(BaseLavalinkModel):
 
 
 @attr.define()
-class LoadTrackResult(BaseLavalinkModel):
-    """Tracking loading result."""
+class LoadResult(BaseLavalinkModel):
+    """Track loading result."""
 
     load_type: LoadResultType
-    """The type of the result"""
-    playlist_info: PlaylistInfo | None
-    """Additional playlist info. Available for type :obj:`~LoadResultType.PLAYLIST_LOADED`."""
-    tracks: tuple[Track, ...] | None
-    """All tracks which have been loaded. Available for types :obj:`~LoadResultType.TRACK_LOADED`, 
-    :obj:`~LoadResultType.PLAYLIST_LOADED` & :obj:`~LoadResultType.SEARCH_RESULT`."""
-    exception: TrackException | None
-    """The exception this load failed with. Available for type :obj:`~LoadResultType.LOAD_FAILED`."""
+    """The type of the result."""
+    track: Track | None
+    """Track that has been loaded. Available for ``load_type`` :obj:`~LoadResultType.TRACK`."""
+    playlist: PlaylistLoadResult | None
+    """Playlist that has been loaded. Available for ``load_type`` :obj:`~LoadResultType.PLAYLIST`."""
+    search: tuple[Track, ...] | None
+    """Search result that has been loaded. Available for ``load_type`` :obj:`~LoadResultType.SEARCH`."""
+    error: LavalinkException | None
+    """The exception this load failed with. Available for ``load_type`` :obj:`~LoadResultType.ERROR`."""
 
     @classmethod
     def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         load_type = data["loadType"]
-        playlist_info = data["playlistInfo"]
-        tracks = data["tracks"]
-        exception = data.get("exception")
+        load_data = data["data"]
 
-        assert (
-            isinstance(load_type, str)
-            and isinstance(playlist_info, dict)
-            and isinstance(tracks, list)
-            and types.is_payload_list(tracks)
-            and isinstance(exception, dict | None)
-        )
+        assert isinstance(load_type, str)
+
+        load_type_ = LoadResultType(load_type)
+
+        if load_type_ in (
+            LoadResultType.TRACK,
+            LoadResultType.PLAYLIST,
+            LoadResultType.ERROR,
+        ):
+            assert isinstance(load_data, dict)
+        elif load_type_ == LoadResultType.SEARCH:
+            assert isinstance(load_data, list) and types.is_payload_list(load_data)
 
         return cls(
-            LoadResultType(load_type),
-            # `None` for empty results
-            PlaylistInfo.from_payload(playlist_info) if playlist_info else None,
-            Track.from_payloads(tracks) if tracks else None,
-            TrackException.from_payload_nullable(exception),
+            load_type_,
+            Track.from_payload(load_data)
+            if load_type_ == LoadResultType.TRACK
+            else None,
+            PlaylistLoadResult.from_payload(load_data)
+            if load_type_ == LoadResultType.PLAYLIST
+            else None,
+            Track.from_payloads(load_data)
+            if load_type_ == LoadResultType.SEARCH
+            else None,
+            LavalinkException.from_payload(load_data)
+            if load_type_ == LoadResultType.ERROR
+            else None,
         )
 
 
 class LoadResultType(enum.Enum):
-    TRACK_LOADED = "TRACK_LOADED"
+    TRACK = "track"
     """A track has been loaded."""
-    PLAYLIST_LOADED = "PLAYLIST_LOADED"
+    PLAYLIST = "playlist"
     """A playlist has been loaded."""
-    SEARCH_RESULT = "SEARCH_RESULT"
+    SEARCH = "search"
     """A search result has been loaded."""
-    NO_MATCHES = "NO_MATCHES"
+    EMPTY = "empty"
     """There has been no matches to your identifier."""
-    LOAD_FAILED = "LOAD_FAILED"
-    """Loading has failed."""
+    ERROR = "error"
+    """Loading has failed with an error."""
+
+
+@attr.define()
+class PlaylistLoadResult(BaseLavalinkModel):
+    """Playlist load result."""
+
+    info: PlaylistInfo
+    """The info of the playlist."""
+    plugin_info: typing.Any
+    """Additional playlist info provided by plugins."""
+    tracks: tuple[Track, ...]
+    """The tracks of the playlist."""
+
+    @classmethod
+    def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
+        info = data["info"]
+        plugin_info = data["pluginInfo"]
+        tracks = data["tracks"]
+
+        assert (
+            isinstance(info, dict)
+            and isinstance(plugin_info, dict)
+            and isinstance(tracks, list)
+            and types.is_payload_list(tracks)
+        )
+
+        return cls(
+            PlaylistInfo.from_payload(info), plugin_info, Track.from_payloads(tracks)
+        )
 
 
 @attr.define()
 class PlaylistInfo(BaseLavalinkModel):
-    name: str | None
-    """The name of the loaded playlist."""
+    name: str
+    """The name of the playlist."""
     selected_track: int | None
-    """The selected track in this Playlist. ``None`` if no track is selected."""
+    """The selected track of this playlist. ``None`` if no track is selected."""
 
     @classmethod
     def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
-        name = data.get("name")
-        selected_track = data.get("selectedTrack")
+        name = data["name"]
+        selected_track = data["selectedTrack"]
 
-        assert isinstance(name, str | None) and isinstance(selected_track, int | None)
+        assert isinstance(name, str) and isinstance(selected_track, int)
 
-        return cls(name, selected_track)
+        return cls(name, selected_track if selected_track != -1 else None)
 
 
 @attr.define()

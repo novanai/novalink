@@ -25,7 +25,7 @@ class ReadyEvent(Event):
     """Dispatched by Lavalink upon successful connection and authorization."""
 
     resumed: bool
-    """Whether a session was resumed."""
+    """Whether this session was resumed."""
     session_id: str
     """The Lavalink session ID of this connection."""
 
@@ -71,21 +71,19 @@ class TrackStartEvent(Event):
 
     guild_id: int
     """The guild ID."""
-    encoded_track: str
-    """The base64 encoded track that started playing."""
+    track: models.Track
+    """The track that started playing."""
 
     @classmethod
     def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         guild_id = data["guildId"]
-        encoded_track = data["encodedTrack"]
+        track = data["track"]
 
         assert (
-            isinstance(guild_id, str)
-            and guild_id.isdigit()
-            and isinstance(encoded_track, str)
+            isinstance(guild_id, str) and guild_id.isdigit() and isinstance(track, dict)
         )
 
-        return cls(int(guild_id), encoded_track)
+        return cls(int(guild_id), models.Track.from_payload(track))
 
 
 @attr.define()
@@ -94,27 +92,27 @@ class TrackEndEvent(Event):
 
     guild_id: int
     """The guild ID."""
-    encoded_track: str
-    """The base64 encoded track that ended playing."""
+    track: models.Track
+    """The track that ended playing."""
     reason: models.TrackEndReason
     """The reason the track ended."""
 
     @classmethod
     def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         guild_id = data["guildId"]
-        encoded_track = data["encodedTrack"]
+        track = data["track"]
         reason = data["reason"]
 
         assert (
             isinstance(guild_id, str)
             and guild_id.isdigit()
-            and isinstance(encoded_track, str)
+            and isinstance(track, dict)
             and isinstance(reason, str)
         )
 
         return cls(
             int(guild_id),
-            encoded_track,
+            models.Track.from_payload(track),
             models.TrackEndReason(reason),
         )
 
@@ -123,28 +121,28 @@ class TrackEndEvent(Event):
 class TrackExceptionEvent(Event):
     guild_id: int
     """The guild ID."""
-    encoded_track: str
-    """The base64 encoded track that threw the exception."""
-    exception: models.TrackException
+    track: models.Track
+    """The track that threw the exception."""
+    exception: models.LavalinkException
     """The exception that occurred."""
 
     @classmethod
     def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         guild_id = data["guildId"]
-        encoded_track = data["encodedTrack"]
+        track = data["track"]
         exception = data["exception"]
 
         assert (
             isinstance(guild_id, str)
             and guild_id.isdigit()
-            and isinstance(encoded_track, str)
+            and isinstance(track, dict)
             and isinstance(exception, dict)
         )
 
         return cls(
             int(guild_id),
-            encoded_track,
-            models.TrackException.from_payload(exception),
+            models.Track.from_payload(track),
+            models.LavalinkException.from_payload(exception),
         )
 
 
@@ -152,7 +150,7 @@ class TrackExceptionEvent(Event):
 class TrackStuckEvent(Event):
     guild_id: int
     """The guild ID."""
-    encoded_track: str
+    track: models.Track
     """The base64 encoded track that got stuck."""
     threshold: datetime.timedelta
     """The threshold that was exceeded."""
@@ -160,19 +158,19 @@ class TrackStuckEvent(Event):
     @classmethod
     def from_payload(cls, data: types.PayloadType) -> typing_extensions.Self:
         guild_id = data["guildId"]
-        encoded_track = data["encodedTrack"]
+        track = data["encodedTrack"]
         threshold_ms = data["thresholdMs"]
 
         assert (
             isinstance(guild_id, str)
             and guild_id.isdigit()
-            and isinstance(encoded_track, str)
+            and isinstance(track, dict)
             and isinstance(threshold_ms, int)
         )
 
         return cls(
             int(guild_id),
-            encoded_track,
+            models.Track.from_payload(track),
             datetime.timedelta(milliseconds=threshold_ms),
         )
 
